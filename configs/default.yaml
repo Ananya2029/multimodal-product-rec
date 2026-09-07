@@ -1,0 +1,52 @@
+data:
+  category: "Video_Games"        # Amazon Reviews 2023 category; also try Baby_Products, Arts_Crafts_and_Sewing
+  min_interactions: 5             # 5-core filtering
+  max_items: 15000                # cap for feasibility on free GPU
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
+  image_cache_dir: "data/raw/images"
+  processed_dir: "data/processed"
+
+image_encoder:
+  model_name: "google/siglip-base-patch16-224"
+  embed_dim: 256
+  use_lora: true
+  lora_r: 8
+  lora_alpha: 16
+  batch_size: 32
+  epochs: 3
+  lr: 1e-4
+
+text_encoder:
+  model_name: "Qwen/Qwen2-0.5B"       # fallback: "sentence-transformers/all-MiniLM-L6-v2" if compute is tight
+  fallback_model: "sentence-transformers/all-MiniLM-L6-v2"
+  embed_dim: 256
+  use_lora: true
+  lora_r: 8
+  lora_alpha: 16
+  max_seq_len: 64
+  csft_epochs: 1
+  iem_epochs: 2
+  batch_size: 16
+  lr: 2e-4
+
+fusion:
+  type: "gated"     # options: image_only, text_only, concat, gated
+  dim: 256
+
+retrieval:
+  top_k: [1, 5, 10]
+
+seq_rec:
+  model: "SASRec"    # via RecBole
+  max_seq_len: 50
+  hidden_size: 256
+  num_layers: 2
+  num_heads: 2
+  epochs: 20
+  batch_size: 256
+
+eval:
+  recall_k: [10, 20]
+  ndcg_k: [10, 20]
