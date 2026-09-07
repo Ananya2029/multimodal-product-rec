@@ -32,7 +32,7 @@ def download_category(category):
     )
     print(f"Loading item metadata for category: {category}")
     meta = load_dataset(
-        "McAuley-Lab/Amazon-Reviews-2023",
+        "https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
         f"raw_meta_{category}",
         trust_remote_code=True,
         split="full",
