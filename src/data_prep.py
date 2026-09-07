@@ -1,4 +1,3 @@
-%%writefile src/data_prep.py
 
 """
 data_prep.py
