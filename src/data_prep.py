@@ -25,7 +25,7 @@ def download_category(category):
     """Loads reviews + item metadata for one Amazon Reviews 2023 category via HF datasets hub."""
     print(f"Loading reviews for category: {category}")
     reviews = load_dataset(
-        "https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
+        "McAuley-Lab/Amazon-Reviews-2023",
         f"raw_review_{category}",
         trust_remote_code=True,
         split="full",
