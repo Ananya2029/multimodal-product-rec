@@ -13,13 +13,14 @@ from tqdm import tqdm
 
 from .config import BATCH_SIZE
 
-torch.set_grad_enabled(False)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# NB: every torch encode_* method is wrapped in @torch.no_grad(). A global torch.set_grad_enabled(False)
+# would only apply to the importing thread, and Streamlit reruns scripts in new threads.
 
 
 def _l2(x) -> np.ndarray:
     if isinstance(x, torch.Tensor):
-        x = F.normalize(x.float(), dim=-1).cpu().numpy()
+        x = F.normalize(x.detach().float(), dim=-1).cpu().numpy()
     else:
         x = x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-12)
     return x.astype(np.float32)
@@ -83,6 +84,7 @@ class MiniLMEncoder(Encoder):
         self.tok = AutoTokenizer.from_pretrained(self.model_id)
         self.model = AutoModel.from_pretrained(self.model_id).to(DEVICE).eval()
 
+    @torch.no_grad()
     def encode_text(self, texts):
         out = []
         for b in _batches(texts, 128, "MiniLM text"):
@@ -106,6 +108,7 @@ class ResNetEncoder(Encoder):
         self.model = self.model.to(DEVICE).eval()
         self.tf = w.transforms()
 
+    @torch.no_grad()
     def encode_image(self, images):
         out = []
         for b in _batches(images, BATCH_SIZE, "ResNet image"):
@@ -124,6 +127,7 @@ class DinoV2Encoder(Encoder):
         self.proc = AutoImageProcessor.from_pretrained(self.model_id)
         self.model = AutoModel.from_pretrained(self.model_id).to(DEVICE).eval()
 
+    @torch.no_grad()
     def encode_image(self, images):
         out = []
         for b in _batches(images, BATCH_SIZE, "DINOv2 image"):
@@ -143,6 +147,7 @@ class CLIPEncoder(Encoder):
         self.proc = AutoProcessor.from_pretrained(self.model_id)
         self.model = AutoModel.from_pretrained(self.model_id).to(DEVICE).eval()
 
+    @torch.no_grad()
     def encode_text(self, texts):
         out = []
         for b in _batches(texts, 128, f"{self.name} text"):
@@ -151,6 +156,7 @@ class CLIPEncoder(Encoder):
             out.append(_l2(_as_tensor(self.model.get_text_features(**t))))
         return np.vstack(out)
 
+    @torch.no_grad()
     def encode_image(self, images):
         out = []
         for b in _batches(images, BATCH_SIZE, f"{self.name} image"):

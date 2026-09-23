@@ -3,6 +3,7 @@ import argparse
 import json
 import pickle
 import time
+from functools import lru_cache
 
 import numpy as np
 
@@ -41,15 +42,22 @@ def build(models=None, bench: int | None = None):
             ms = 1000 * (time.perf_counter() - t0) / len(items)
             if not bench:
                 np.save(emb_path(name, modality), X)
+                load.cache_clear()
             timing[f"{name}_{modality}"] = {"ms_per_item": round(ms, 2), "dim": int(X.shape[1])}
             print(f"   {modality}: {X.shape}  {ms:.1f} ms/item")
             timing_file.write_text(json.dumps(timing, indent=2))  # save as we go
         del enc
 
 
+@lru_cache(maxsize=None)
 def load(model: str, modality: str):
+    """Load cached embeddings once per process and share them (read-only) between recommenders."""
     p = emb_path(model, modality)
-    return np.load(p) if p.exists() else None
+    if not p.exists():
+        return None
+    X = np.load(p)
+    X.flags.writeable = False
+    return X
 
 
 if __name__ == "__main__":

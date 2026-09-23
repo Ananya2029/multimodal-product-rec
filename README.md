@@ -19,6 +19,16 @@ Recommends products by combining **image embeddings** and **text embeddings**. I
 
 All 11 systems are in [`results/model_comparison.csv`](results/model_comparison.csv).
 
+### Verdict: which model is best?
+
+| Task | Winner | NDCG@10 (95% CI) | Runner-up | Significant? |
+|---|---|---|---|---|
+| More like this (same type) | DINOv2 + MiniLM | 0.835 (0.827–0.843) | CLIP image + text, 0.815 | ✅ p < 0.001 |
+| More like this (type + colour) | **CLIP image + text** | 0.527 (0.516–0.539) | CLIP text, 0.518 | ✅ p < 0.001 |
+| Text search | **CLIP image + text** | 0.625 (0.589–0.660) | SigLIP image, 0.618 | ≈ tie (p = 0.72) |
+
+**Overall winner: CLIP image + text** (mean rank 1.33 of 11 across the three tasks). Confidence intervals come from bootstrap resampling of the queries. The p-values come from a paired bootstrap test of the winner against the runner-up. The full ranking is in [`results/summary.json`](results/summary.json).
+
 ### Key findings
 1. **Multimodal beats unimodal.** Each fused system scores above both of its single-modality parts on "more like this".
 2. **CLIP image + text is the best all-rounder.** It is best at matching type + colour and best at text search, at moderate cost. It is the app's default.
@@ -71,20 +81,23 @@ Only the product **title** is embedded as text. Category and colour columns are 
 ```bash
 pip install -r requirements.txt
 python -m src.data          # download 3,000 products (images + metadata)
-python -m src.embeddings    # embed catalog with all models (~10 min on CPU)
-python -m src.evaluate      # comparison table + charts -> results/
-streamlit run app.py        # the application
+python -m src.embeddings    # embed catalog with all models (~1 h on an 8-core CPU, minutes on a GPU)
+python -m src.evaluate      # comparison table, significance tests + charts -> results/
+python -m streamlit run app.py   # the application -> http://localhost:8501
+python -m pytest -q         # tests: metrics, fusion, all 11 systems, the Streamlit app
 ```
+
+`notebook.ipynb` walks through the whole pipeline with figures: dataset, models, examples, evaluation, t-SNE of the embedding space, zero-shot search and composed queries.
 
 Change `N_PRODUCTS` in `src/config.py` to use a bigger catalog. The full dataset has about 44k products, which is practical on a GPU.
 
 ## App features
 
+* **Model comparison** (first tab): the winner banner, per-task winner cards with confidence intervals and significance, the overall ranking, detailed metrics, charts and a side-by-side view of models on one product.
 * **More like this**: pick a catalog product and get similar products.
 * **Text search**: free-text queries.
 * **Image search**: upload a photo and find visually similar products.
 * **Image + text**: a composed query made from a reference image plus a text modifier.
-* **Model comparison**: the metrics table, charts and a side-by-side view of different models on one product.
 * Sidebar: model selector, image/text fusion slider, and gender/category filters.
 
 ## Project layout
@@ -95,6 +108,8 @@ src/data.py          dataset download -> data/catalog.csv + data/images/
 src/encoders.py      TF-IDF, MiniLM, ResNet50, DINOv2, CLIP, SigLIP behind one API
 src/embeddings.py    compute + cache embeddings -> embeddings/*.npy
 src/recommender.py   systems (image model, text model) + weighted fusion scoring
-src/evaluate.py      offline comparison -> results/
+src/evaluate.py      offline comparison, CIs + significance tests -> results/
 app.py               Streamlit application
+notebook.ipynb       end-to-end walkthrough with figures
+tests/               pytest suite (incl. headless run of the app for all 11 systems)
 ```

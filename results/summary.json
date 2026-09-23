@@ -1,0 +1,256 @@
+{
+  "tasks": {
+    "i2i": {
+      "label": "More like this (same article type)",
+      "best": "DINOv2 + MiniLM (late fusion)",
+      "best_ndcg": 0.835,
+      "best_ci": [
+        0.8266,
+        0.8434
+      ],
+      "runner_up": "CLIP image + text",
+      "runner_up_ndcg": 0.8146,
+      "p_value": 0.0,
+      "significant": true,
+      "n_queries": 3000,
+      "ranking": [
+        [
+          "DINOv2 + MiniLM (late fusion)",
+          0.835
+        ],
+        [
+          "CLIP image + text",
+          0.8146
+        ],
+        [
+          "SigLIP image",
+          0.8068
+        ],
+        [
+          "SigLIP image + text",
+          0.8062
+        ],
+        [
+          "CLIP text",
+          0.7581
+        ],
+        [
+          "DINOv2 image",
+          0.758
+        ],
+        [
+          "CLIP image",
+          0.7416
+        ],
+        [
+          "MiniLM (title)",
+          0.7327
+        ],
+        [
+          "SigLIP text",
+          0.7178
+        ],
+        [
+          "ResNet50 image",
+          0.6792
+        ],
+        [
+          "TF-IDF (title)",
+          0.6577
+        ]
+      ]
+    },
+    "i2i-strict": {
+      "label": "More like this (same type + colour)",
+      "best": "CLIP image + text",
+      "best_ndcg": 0.5273,
+      "best_ci": [
+        0.5162,
+        0.5387
+      ],
+      "runner_up": "CLIP text",
+      "runner_up_ndcg": 0.5177,
+      "p_value": 0.0,
+      "significant": true,
+      "n_queries": 3000,
+      "ranking": [
+        [
+          "CLIP image + text",
+          0.5273
+        ],
+        [
+          "CLIP text",
+          0.5177
+        ],
+        [
+          "SigLIP image + text",
+          0.4039
+        ],
+        [
+          "SigLIP text",
+          0.3712
+        ],
+        [
+          "TF-IDF (title)",
+          0.3519
+        ],
+        [
+          "DINOv2 + MiniLM (late fusion)",
+          0.3317
+        ],
+        [
+          "MiniLM (title)",
+          0.3088
+        ],
+        [
+          "SigLIP image",
+          0.2908
+        ],
+        [
+          "CLIP image",
+          0.2897
+        ],
+        [
+          "ResNet50 image",
+          0.2574
+        ],
+        [
+          "DINOv2 image",
+          0.2443
+        ]
+      ]
+    },
+    "search": {
+      "label": "Text search (colour + type + gender)",
+      "best": "CLIP image + text",
+      "best_ndcg": 0.6245,
+      "best_ci": [
+        0.5889,
+        0.6604
+      ],
+      "runner_up": "SigLIP image",
+      "runner_up_ndcg": 0.6182,
+      "p_value": 0.722,
+      "significant": false,
+      "n_queries": 261,
+      "ranking": [
+        [
+          "CLIP image + text",
+          0.6245
+        ],
+        [
+          "SigLIP image",
+          0.6182
+        ],
+        [
+          "MiniLM (title)",
+          0.607
+        ],
+        [
+          "DINOv2 + MiniLM (late fusion)",
+          0.607
+        ],
+        [
+          "CLIP text",
+          0.5697
+        ],
+        [
+          "CLIP image",
+          0.4528
+        ],
+        [
+          "SigLIP image + text",
+          0.4291
+        ],
+        [
+          "TF-IDF (title)",
+          0.4021
+        ],
+        [
+          "SigLIP text",
+          0.3124
+        ]
+      ]
+    }
+  },
+  "overall": [
+    {
+      "system": "CLIP image + text",
+      "mean_rank": 1.33,
+      "rank_i2i": 2,
+      "rank_i2i-strict": 1,
+      "rank_search": 1
+    },
+    {
+      "system": "DINOv2 + MiniLM (late fusion)",
+      "mean_rank": 3.5,
+      "rank_i2i": 1,
+      "rank_i2i-strict": 6,
+      "rank_search": 3
+    },
+    {
+      "system": "CLIP text",
+      "mean_rank": 4.0,
+      "rank_i2i": 5,
+      "rank_i2i-strict": 2,
+      "rank_search": 5
+    },
+    {
+      "system": "SigLIP image",
+      "mean_rank": 4.33,
+      "rank_i2i": 3,
+      "rank_i2i-strict": 8,
+      "rank_search": 2
+    },
+    {
+      "system": "SigLIP image + text",
+      "mean_rank": 4.67,
+      "rank_i2i": 4,
+      "rank_i2i-strict": 3,
+      "rank_search": 7
+    },
+    {
+      "system": "MiniLM (title)",
+      "mean_rank": 6.17,
+      "rank_i2i": 8,
+      "rank_i2i-strict": 7,
+      "rank_search": 3
+    },
+    {
+      "system": "CLIP image",
+      "mean_rank": 7.33,
+      "rank_i2i": 7,
+      "rank_i2i-strict": 9,
+      "rank_search": 6
+    },
+    {
+      "system": "SigLIP text",
+      "mean_rank": 7.33,
+      "rank_i2i": 9,
+      "rank_i2i-strict": 4,
+      "rank_search": 9
+    },
+    {
+      "system": "TF-IDF (title)",
+      "mean_rank": 8.0,
+      "rank_i2i": 11,
+      "rank_i2i-strict": 5,
+      "rank_search": 8
+    },
+    {
+      "system": "DINOv2 image",
+      "mean_rank": 9.17,
+      "rank_i2i": 6,
+      "rank_i2i-strict": 11,
+      "rank_search": 10
+    },
+    {
+      "system": "ResNet50 image",
+      "mean_rank": 10.17,
+      "rank_i2i": 10,
+      "rank_i2i-strict": 10,
+      "rank_search": 10
+    }
+  ],
+  "recommended": "CLIP image + text"
+}
