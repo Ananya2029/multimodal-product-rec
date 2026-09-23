@@ -10,3 +10,7 @@ matplotlib
 tqdm
 streamlit>=1.35
 sentencepiece
+protobuf
+# tests + notebook
+pytest
+jupyter
