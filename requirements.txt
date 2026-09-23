@@ -1,0 +1,12 @@
+torch>=2.2
+torchvision>=0.17
+transformers>=4.45
+datasets>=2.19
+scikit-learn>=1.3
+numpy
+pandas
+pillow
+matplotlib
+tqdm
+streamlit>=1.35
+sentencepiece

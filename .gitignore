@@ -1,0 +1,10 @@
+# large, regenerable artifacts (python -m src.data / src.embeddings)
+data/
+embeddings/
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+.DS_Store

@@ -1,0 +1,7 @@
+[server]
+# Streamlit's watcher scans every imported module (incl. hundreds of transformers
+# models) on each rerun, which floods the log with warnings. Restart the app after code edits.
+fileWatcherType = "none"
+
+[client]
+toolbarMode = "minimal"
