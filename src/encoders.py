@@ -41,7 +41,7 @@ def _as_tensor(out) -> torch.Tensor:
 
 # Free RAM needed before loading one tower. Below this, loading a memory-mapped checkpoint on Windows can
 # die with an access violation (not a Python error), which would kill the whole app, so refuse politely.
-MIN_FREE_MB = {"SigLIP": 1200}
+MIN_FREE_MB = {"SigLIP": 1200, "CLIP": 600, "DINOv2": 500, "ResNet50": 500, "MiniLM": 400}
 
 
 def _check_free_memory(model_name: str):
@@ -52,7 +52,8 @@ def _check_free_memory(model_name: str):
     free = psutil.virtual_memory().available / 2**20
     if free < need:
         raise MemoryError(f"Not enough free memory to load {model_name} ({free:.0f} MB free, about {need} MB "
-                          f"needed). Close other programs or choose another model, e.g. CLIP image + text.")
+                          f"needed). Close other programs (VS Code, Chrome tabs, Docker, WhatsApp) and try again, "
+                          f"or choose a lighter model such as TF-IDF (title).")
 
 
 def _batches(items, bs, desc):
@@ -102,6 +103,7 @@ class MiniLMEncoder(Encoder):
     model_id = "sentence-transformers/all-MiniLM-L6-v2"
 
     def __init__(self):
+        _check_free_memory("MiniLM")
         from transformers import AutoModel, AutoTokenizer
         self.tok = AutoTokenizer.from_pretrained(self.model_id)
         self.model = AutoModel.from_pretrained(self.model_id).to(DEVICE).eval()
@@ -123,6 +125,7 @@ class ResNetEncoder(Encoder):
     name, modalities = "ResNet50", ("image",)
 
     def __init__(self):
+        _check_free_memory("ResNet50")
         from torchvision.models import ResNet50_Weights, resnet50
         w = ResNet50_Weights.IMAGENET1K_V2
         self.model = resnet50(weights=w)
@@ -145,6 +148,7 @@ class DinoV2Encoder(Encoder):
     model_id = "facebook/dinov2-small"
 
     def __init__(self):
+        _check_free_memory("DINOv2")
         from transformers import AutoImageProcessor, AutoModel
         self.proc = AutoImageProcessor.from_pretrained(self.model_id)
         self.model = AutoModel.from_pretrained(self.model_id).to(DEVICE).eval()

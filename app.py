@@ -367,7 +367,11 @@ if page == PAGES[5]:
                    f"fetched {cat['fetched_at']}")
         live_q = st.text_input("Search the live shop", placeholder="e.g. black sunglasses", key="live_q")
         if live_q.strip():
-            s_live = live_scores(cat, q_txt=encoder("CLIP").encode_text([live_q])[0])
+            try:
+                s_live = live_scores(cat, q_txt=encoder("CLIP").encode_text([live_q])[0])
+            except MemoryError as e:
+                st.warning(f"⚠️ {e}")
+                st.stop()
             top = np.argsort(-s_live)[:k]
             cols = st.columns(5)
             for n, i in enumerate(top):
