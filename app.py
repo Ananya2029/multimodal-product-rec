@@ -2,7 +2,7 @@
 
     python -m streamlit run app.py
 
-Two pages: the study (what we did, what we achieved) and a demo of the proposed gated-fusion model.
+Two pages: the study (our approach, what we achieved) and a demo of the proposed gated-fusion model.
 The demo catalog is the TEST split: 6,602 products the model never saw during training.
 """
 import json
@@ -42,7 +42,7 @@ def fmt(mean, std):
 
 # ------------------------------------------------------------------ header + navigation
 st.title("🛍️ Multimodal Product Recommendation")
-st.caption("Image and text embeddings learned **from scratch**, fused with a **gated fusion** network")
+st.caption("Image and text embeddings fused with a **gated fusion** network")
 page = st.radio("Page", ["📊 Results", "🛍️ Try the proposed model"], horizontal=True,
                 label_visibility="collapsed", key="page")
 
@@ -61,8 +61,8 @@ n_types = pd.read_csv(serve.SCRATCH_DIR / "meta.csv", usecols=["articleType"])["
 
 # ================================================================== RESULTS
 if page == "📊 Results":
-    # ------------------------------------------------------------ what we did
-    st.header("What we did")
+    # ------------------------------------------------------------ our approach
+    st.header("Our Approach")
     c1, c2 = st.columns([1.1, 1])
     with c1:
         st.markdown(f"""

@@ -18,7 +18,7 @@ The app has two pages: **📊 Results** and **🛍️ Try the proposed model**.
 
 | # | Page | What to do | What to say |
 |---|---|---|---|
-| 1 | 📊 Results: *What we did* | Walk through steps 1–5 and the architecture diagram | "Photo → CNN, title → Transformer, both trained from scratch, combined by our gated fusion into one product embedding." |
+| 1 | 📊 Results: *Our Approach* | Walk through steps 1–5 and the architecture diagram | "Photo → CNN, title → Transformer, both trained from scratch, combined by our gated fusion into one product embedding." |
 | 2 | 📊 *What we achieved* | The 4 green metric cards | "Our model on 6,602 unseen products: 0.956 for similar products, +0.14 over image-only; better photo search than an image-only model." |
 | 3 | (scroll) | Key findings, then the comparison table (our model is highlighted) | "Compared with 5 baselines over 3 seeds, with significance tests." |
 | 4 | (scroll) | Optimizer table and curves | "SGD, Adam and AdamW, each tuned on validation; SGD selected." |
