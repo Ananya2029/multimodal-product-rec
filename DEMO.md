@@ -53,7 +53,7 @@ Optimizers (gated): SGD 0.956 / 0.765 / 0.568 / **0.831**; Adam 0.956 / 0.752 / 
 
 ## Likely questions
 - **Why doesn't the proposed model win everything?** Titles in this catalog contain the answer words (type, colour), so text alone is very strong. Fusion helps where text is missing, i.e. photo queries. Next step: test with noisy or missing titles, which is where image features matter most.
-- **Why train from scratch?** To study the fusion methods themselves, without the advantage of large-scale pretraining. As a reference, pretrained CLIP was also evaluated; it's shown in the app but not used in our method.
+- **Why train from scratch?** To study the fusion methods themselves, without the advantage of large-scale pretraining. As a reference only, pretrained CLIP was also evaluated earlier (results in `results/model_comparison.csv`); it is not used in our method or the app.
 - **Which optimizer?** SGD (Nesterov, lr 0.1) was selected on validation. The three optimizers are within about 0.01 of each other; SGD is best on photo and type + colour, and AdamW on text queries.
 - **How long did training take?** About 50 training runs (about 6 minutes each) on a Kaggle T4 GPU, roughly 4–5 hours in total.
 - **Is it reproducible?** Yes. Fixed seeds, a notebook (`colab/`), all runs logged in `results/scratch/all_runs.csv`, and tests (`python run_tests.py`).
