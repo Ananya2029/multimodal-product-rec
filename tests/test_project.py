@@ -3,6 +3,7 @@
     python -m pytest -q
 Requires the cached catalog + embeddings (python -m src.data && python -m src.embeddings).
 """
+import json
 import os
 
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
@@ -15,10 +16,11 @@ from PIL import Image
 from src.config import IMAGE_DIR, RESULTS_DIR
 from src.data import load_catalog
 from src.evaluate import paired_bootstrap_p, ranking_metrics, topk_from_scores
-from src.recommender import SYSTEMS, SYSTEMS_BY_NAME, Recommender
+from src import query as Q
+from src.query import ModelCache
+from src.recommender import SYSTEMS, SYSTEMS_BY_NAME, Recommender, available_systems
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHARED = ("CLIP", "SigLIP")
 
 
 @pytest.fixture(scope="session")
@@ -78,55 +80,27 @@ def test_item_is_its_own_nearest_neighbour():
     assert idx[0] == 7
 
 
-# ---------------------------------------------------------------- every system x every query type (same path as app)
+# ---------------------------------------------------------------- every system x every query type (same code as app/API)
 @pytest.fixture(scope="module")
 def encoders():
-    import pickle
-    from src.config import EMB_DIR
-    from src.encoders import get_encoder
-    import gc
-    cache = {}
-
-    def get(name):
-        if name not in cache:
-            while len(cache) >= 2:  # keep at most 2 models in RAM, like the app
-                cache.pop(next(iter(cache)))
-                gc.collect()
-            if name == "TF-IDF":
-                with open(EMB_DIR / "tfidf.pkl", "rb") as f:
-                    cache[name] = pickle.load(f)
-            else:
-                cache[name] = get_encoder(name)
-        return cache[name]
-    return get
+    return ModelCache(max_models=2)  # keep at most 2 models in RAM, like the app
 
 
 def encode_query(enc, system, image=None, text=None):
-    q = {}
-    if image is not None:
-        if system.image_model:
-            q["q_img"] = enc(system.image_model).encode_image([image])[0]
-        if system.text_model in SHARED:
-            q["q_img_textenc"] = enc(system.text_model).encode_image([image])[0]
-    if text:
-        if system.text_model:
-            q["q_txt"] = enc(system.text_model).encode_text([text])[0]
-        if system.image_model in SHARED:
-            q["q_txt_imgenc"] = enc(system.image_model).encode_text([text])[0]
-    return q
+    return Q.encode_query(system, image, text, enc)
 
 
-@pytest.mark.parametrize("system", SYSTEMS, ids=lambda s: s.name)
+@pytest.mark.parametrize("system", available_systems(), ids=lambda s: s.name)
 def test_free_form_queries(system, df, encoders):
     r = Recommender(system, 0.5)
     img = Image.open(IMAGE_DIR / df.iloc[0]["image_path"])
-    can_image = system.image_model is not None or system.text_model in SHARED
-    can_text = system.text_model is not None or system.image_model in SHARED
-    for image, text, supported in [(None, "black handbag for women", can_text),
-                                   (img, None, can_image),
-                                   (img, "in red colour", can_image or can_text)]:
-        scores = r.query_scores(**encode_query(encoders, system, image, text))
-        if not supported:
+    for image, text in [(None, "black handbag for women"), (img, None), (img, "in red colour")]:
+        try:
+            q = encode_query(encoders, system, image, text)
+        except MemoryError as e:  # low-RAM guard (src/encoders.py) refused to load a big model
+            pytest.skip(str(e))
+        scores = r.query_scores(**q)
+        if not Q.can_handle(system, image is not None, bool(text)):
             assert scores is None
             continue
         assert scores is not None and scores.shape == (len(df),) and np.isfinite(scores).all()
@@ -154,3 +128,44 @@ def test_uploaded_png_with_alpha_works(encoders, tmp_path):
 def test_results_files_exist():
     for f in ("model_comparison.csv", "summary.json", "model_comparison.png", "fusion_sweep.png"):
         assert (RESULTS_DIR / f).exists(), f"missing {f}; run python -m src.evaluate"
+
+
+# ---------------------------------------------------------------- trained fusion heads (optimizer comparison)
+def test_optimizer_comparison_results():
+    import pandas as pd
+    res = pd.read_csv(RESULTS_DIR / "optimizer_comparison.csv")
+    assert set(res["optimizer"]) >= {"SGD", "Adam", "AdamW"}
+    zero_shot = res.iloc[0]["i2i NDCG@10"]
+    for _, r in res[res["optimizer"] != "-"].iterrows():  # every trained head beats zero-shot on unseen products
+        assert r["i2i NDCG@10"] > zero_shot
+
+
+def test_trained_head_is_deterministic_and_normalised():
+    from src.fusion import load_head, project
+    head = load_head("SGD")
+    v = np.random.default_rng(0).normal(size=(3, 512)).astype(np.float32)
+    a, b = project(head, v, v), project(head, v, v)
+    assert np.allclose(a, b) and np.allclose(np.linalg.norm(a, axis=1), 1, atol=1e-5)
+    assert project(head, None, v).shape == (3, 256)  # text-only query works
+
+
+# ---------------------------------------------------------------- GAN
+def test_gan_generates_requested_images():
+    from src.gan import MODEL_DIR, generate, load_generator
+    if not (MODEL_DIR / "gan_generator.pt").exists():
+        pytest.skip("GAN not trained (python -m src.gan)")
+    G, classes = load_generator()
+    imgs = generate(G, 0, 3, seed=1)
+    assert len(imgs) == 3 and imgs[0].size == (64, 64)
+    assert np.asarray(generate(G, 0, 1, seed=1)[0]).tolist() == np.asarray(imgs[0]).tolist()  # seeded
+    metrics = json.loads((RESULTS_DIR / "gan_metrics.json").read_text())
+    assert metrics["class accuracy (generated)"] > metrics["chance accuracy"]
+
+
+# ---------------------------------------------------------------- internet
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "http://127.0.0.1:8000/x.png", "http://localhost/a.jpg",
+                                 "http://192.168.1.1/a.jpg", "ftp://example.com/a.jpg", "not a url"])
+def test_url_fetch_refuses_unsafe_links(url):
+    from src.web import ImageFetchError, fetch_image
+    with pytest.raises(ImageFetchError):
+        fetch_image(url)

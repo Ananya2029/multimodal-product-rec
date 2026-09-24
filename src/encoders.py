@@ -5,6 +5,12 @@ Every encoder returns L2-normalised float32 numpy arrays, so cosine similarity =
 """
 from __future__ import annotations
 
+import os
+
+# Load model weights sequentially: transformers 5 otherwise reads them on 4 threads at once, which raises
+# peak memory and crashed (access violation) on a low-RAM Windows machine inside Streamlit.
+os.environ.setdefault("HF_DEACTIVATE_ASYNC_LOAD", "1")
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -31,6 +37,22 @@ def _as_tensor(out) -> torch.Tensor:
     if isinstance(out, torch.Tensor):
         return out
     return out.pooler_output
+
+
+# Free RAM needed before loading one tower. Below this, loading a memory-mapped checkpoint on Windows can
+# die with an access violation (not a Python error), which would kill the whole app, so refuse politely.
+MIN_FREE_MB = {"SigLIP": 1200}
+
+
+def _check_free_memory(model_name: str):
+    need = MIN_FREE_MB.get(model_name)
+    if not need:
+        return
+    import psutil
+    free = psutil.virtual_memory().available / 2**20
+    if free < need:
+        raise MemoryError(f"Not enough free memory to load {model_name} ({free:.0f} MB free, about {need} MB "
+                          f"needed). Close other programs or choose another model, e.g. CLIP image + text.")
 
 
 def _batches(items, bs, desc):
@@ -138,30 +160,45 @@ class DinoV2Encoder(Encoder):
 
 # ---------------------------------------------------------------- vision-language (shared space)
 class CLIPEncoder(Encoder):
+    """Vision-language model. The text and image towers are loaded lazily, each on first use: a text
+    search only needs the text tower, which roughly halves memory on low-RAM machines."""
     name, modalities, shared_space = "CLIP", ("image", "text"), True
     model_id = "openai/clip-vit-base-patch32"
     text_padding: str | bool = True
+    text_cls, vision_cls = "CLIPTextModelWithProjection", "CLIPVisionModelWithProjection"
 
     def __init__(self):
-        from transformers import AutoModel, AutoProcessor
+        from transformers import AutoProcessor
         self.proc = AutoProcessor.from_pretrained(self.model_id)
-        self.model = AutoModel.from_pretrained(self.model_id).to(DEVICE).eval()
+        self._towers = {}
+
+    def _tower(self, cls_name: str):
+        if cls_name not in self._towers:
+            import transformers
+            _check_free_memory(self.name)
+            self._towers[cls_name] = getattr(transformers, cls_name).from_pretrained(self.model_id).to(DEVICE).eval()
+        return self._towers[cls_name]
+
+    @staticmethod
+    def _embeds(out, key):
+        return getattr(out, key, None) if getattr(out, key, None) is not None else out.pooler_output
 
     @torch.no_grad()
     def encode_text(self, texts):
-        out = []
+        tower, out = self._tower(self.text_cls), []
         for b in _batches(texts, 128, f"{self.name} text"):
             t = self.proc(text=b, padding=self.text_padding, truncation=True,
                           max_length=64, return_tensors="pt").to(DEVICE)
-            out.append(_l2(_as_tensor(self.model.get_text_features(**t))))
+            t = {k: v for k, v in t.items() if k in ("input_ids", "attention_mask")}
+            out.append(_l2(self._embeds(tower(**t), "text_embeds")))
         return np.vstack(out)
 
     @torch.no_grad()
     def encode_image(self, images):
-        out = []
+        tower, out = self._tower(self.vision_cls), []
         for b in _batches(images, BATCH_SIZE, f"{self.name} image"):
             x = self.proc(images=_load_images(b), return_tensors="pt").to(DEVICE)
-            out.append(_l2(_as_tensor(self.model.get_image_features(**x))))
+            out.append(_l2(self._embeds(tower(pixel_values=x["pixel_values"]), "image_embeds")))
         return np.vstack(out)
 
 
@@ -169,6 +206,7 @@ class SigLIPEncoder(CLIPEncoder):
     name = "SigLIP"
     model_id = "google/siglip-base-patch16-224"
     text_padding = "max_length"  # SigLIP was trained with max-length padding
+    text_cls, vision_cls = "SiglipTextModel", "SiglipVisionModel"  # pooler_output = the embedding
 
 
 ENCODERS = {

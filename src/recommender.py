@@ -5,6 +5,9 @@ Scoring for a catalog item i:
 
 For vision-language models (CLIP/SigLIP) image and text share one space, so a text
 query can also be matched against product images (and an image query against titles).
+
+"Trained" systems use one joint embedding produced by the fusion head (src/fusion.py); it is
+stored in the image slot (I) and queries arrive as q_img.
 """
 from __future__ import annotations
 
@@ -20,7 +23,8 @@ class System:
     name: str
     image_model: str | None
     text_model: str | None
-    group: str  # "text", "image" or "multimodal"
+    group: str  # "text", "image", "multimodal" or "trained"
+    joint_model: str | None = None  # trained fusion head, e.g. "Fusion-SGD"
 
     @property
     def shared(self):
@@ -43,7 +47,15 @@ SYSTEMS = [
     System("CLIP image + text", "CLIP", "CLIP", "multimodal"),
     System("SigLIP image + text", "SigLIP", "SigLIP", "multimodal"),
 ]
-SYSTEMS_BY_NAME = {s.name: s for s in SYSTEMS}
+# trained fusion heads (python -m src.fusion); trained on 70% of the catalog, see results/optimizer_comparison.csv
+TRAINED_SYSTEMS = [System(f"Trained fusion ({opt})", None, None, "trained", joint_model=f"Fusion-{opt}")
+                   for opt in ("SGD", "Adam", "AdamW")]
+SYSTEMS_BY_NAME = {s.name: s for s in SYSTEMS + TRAINED_SYSTEMS}
+
+
+def available_systems() -> list[System]:
+    """Zero-shot systems plus whichever trained fusion heads have been trained."""
+    return SYSTEMS + [s for s in TRAINED_SYSTEMS if embeddings.emb_path(s.joint_model, "joint").exists()]
 
 
 def _norm(v):
@@ -53,8 +65,11 @@ def _norm(v):
 class Recommender:
     def __init__(self, system: System, weight: float = 0.5):
         self.s = system
-        self.I = embeddings.load(system.image_model, "image") if system.image_model else None
-        self.T = embeddings.load(system.text_model, "text") if system.text_model else None
+        if system.joint_model:
+            self.I, self.T = embeddings.load(system.joint_model, "joint"), None
+        else:
+            self.I = embeddings.load(system.image_model, "image") if system.image_model else None
+            self.T = embeddings.load(system.text_model, "text") if system.text_model else None
         # single-modality systems ignore the weight
         self.w = 1.0 if self.T is None else 0.0 if self.I is None else weight
 

@@ -1,0 +1,19 @@
+{
+  "classes": [
+    "Bags",
+    "Belts",
+    "Bottomwear",
+    "Eyewear",
+    "Flip Flops",
+    "Fragrance",
+    "Innerwear",
+    "Jewellery",
+    "Sandal",
+    "Shoes",
+    "Socks",
+    "Topwear",
+    "Wallets",
+    "Watches"
+  ],
+  "epochs": 50
+}

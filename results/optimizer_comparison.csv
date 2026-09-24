@@ -1,0 +1,6 @@
+model,optimizer,i2i NDCG@10,i2i-strict NDCG@10,search NDCG@10,train time (s),hyper-parameters,i2i NDCG@10 std,i2i-strict NDCG@10 std,search NDCG@10 std
+"CLIP image + text (zero-shot, no training)",-,0.7631,0.4776,0.6982,0.0,,,,
+"DINOv2 + MiniLM (zero-shot, no training)",-,0.7813,0.332,,0.0,,,,
+Trained fusion (SGD),SGD,0.9201,0.6308,0.8093,23.1911,lr=0.05,0.0027,0.0014,0.0069
+Trained fusion (Adam),Adam,0.9186,0.6281,0.7887,23.8691,lr=0.003,0.003,0.0006,0.0092
+Trained fusion (AdamW),AdamW,0.9187,0.6282,0.7884,24.1745,"lr=0.003, weight_decay=0.05",0.0027,0.0002,0.0097

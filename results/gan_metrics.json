@@ -1,0 +1,13 @@
+{
+  "FD-CLIP (generated vs real)": 0.5024909387007156,
+  "FD-CLIP untrained generator (baseline)": 0.7152034990740789,
+  "FD-CLIP real vs real (best possible)": 0.03507625061406625,
+  "class accuracy (generated)": 0.14047619047619048,
+  "class accuracy untrained generator": 0.07142857142857142,
+  "class accuracy real held-out images": 0.9266503667481663,
+  "chance accuracy": 0.07142857142857142,
+  "epochs": 50,
+  "train_minutes": 30.7,
+  "n_images": 2754,
+  "n_classes": 14
+}
