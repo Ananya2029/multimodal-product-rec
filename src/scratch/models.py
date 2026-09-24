@@ -15,7 +15,9 @@ Methods (how the item embedding f used for retrieval is built):
 Every method also produces per-modality embeddings z_img, z_txt in one shared space (aligned with an
 image-text contrastive loss), so a text-only or image-only query can still be answered. A missing
 modality is replaced by a learned "null" vector, and training randomly drops modalities
-(modality dropout) so the fused models learn to handle that.
+(modality dropout) so the fused models learn to handle that. A missing-modality consistency loss
+additionally pulls the text-only and image-only fused embeddings of an item towards its full
+(image + text) embedding, so single-modality queries land next to the right products.
 """
 from __future__ import annotations
 
@@ -136,8 +138,9 @@ class MultimodalRec(nn.Module):
         r = torch.rand(b, device=device)
         return r < p / 2, (r >= p / 2) & (r < p)   # (drop_img, drop_txt)
 
-    def encode(self, images=None, tokens=None, drop_p: float = 0.0) -> dict:
-        """images: (B,3,64,64) float or None; tokens: (B,L) long or None. Returns f, z_img, z_txt, gate."""
+    def encode(self, images=None, tokens=None, drop_p: float = 0.0, consistency: bool = False) -> dict:
+        """images: (B,3,64,64) float or None; tokens: (B,L) long or None. Returns f, z_img, z_txt, gate.
+        consistency=True also returns f_full / f_img_only / f_txt_only for the consistency loss."""
         b = (images if images is not None else tokens).shape[0]
         dev = (images if images is not None else tokens).device
         out = {"z_img": None, "z_txt": None, "gate": None}
@@ -164,16 +167,27 @@ class MultimodalRec(nn.Module):
 
         # early / gated / xattn: substitute learned null vectors for missing or dropped modalities
         drop_i, drop_t = self._drop_masks(b, dev, drop_p) if drop_p > 0 else (None, None)
+        out["f"], out["gate"] = self._fuse(b, dev, h_i, tok_i, h_t, tok_t, pad_t, drop_i, drop_t)
+        if consistency and h_i is not None and h_t is not None:
+            # the same items seen with both modalities (target) and with only one of them
+            out["f_full"], _ = self._fuse(b, dev, h_i, tok_i, h_t, tok_t, pad_t)
+            out["f_img_only"], _ = self._fuse(b, dev, h_i, tok_i, None, None, None)
+            out["f_txt_only"], _ = self._fuse(b, dev, None, None, h_t, tok_t, pad_t)
+        return out
+
+    def _fuse(self, b, dev, h_i, tok_i, h_t, tok_t, pad_t, drop_i=None, drop_t=None):
+        """Fused, normalised embedding from encoder outputs; None / dropped modalities use learned nulls."""
+        m = self.method
         hi = self.null_i.expand(b, -1) if h_i is None else h_i
         ht = self.null_t.expand(b, -1) if h_t is None else h_t
         if drop_i is not None:
             hi = torch.where(drop_i[:, None], self.null_i.expand(b, -1), hi)
             ht = torch.where(drop_t[:, None], self.null_t.expand(b, -1), ht)
+        g = None
         if m == "early":
             f = self.fuse(torch.cat([hi, ht], -1))
         elif m == "gated":
             g = torch.sigmoid(self.gate(torch.cat([hi, ht], -1)))
-            out["gate"] = g
             f = self.fuse(g * hi + (1 - g) * ht)
         else:  # xattn: title tokens (queries) attend over image regions (keys / values)
             kv = self.null_tok_i.expand(b, 1, -1) if tok_i is None else tok_i
@@ -189,8 +203,7 @@ class MultimodalRec(nn.Module):
             att = (att * keep).sum(1) / keep.sum(1).clamp(min=1)
             # pooled image + attended regions + pooled title: a text-only query still carries its text
             f = self.fuse(torch.cat([hi, att, ht], -1))
-        out["f"] = F.normalize(f, dim=-1)
-        return out
+        return F.normalize(f, dim=-1), g
 
 
 def count_params(model: nn.Module) -> int:

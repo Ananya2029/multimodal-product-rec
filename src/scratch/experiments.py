@@ -5,7 +5,7 @@ Stages
                 using the proposed gated-fusion model
   2 optimizers  proposed model x 3 optimizers (tuned lr) x seeds          -> optimizer comparison
   3 methods     6 methods x best optimizer (chosen on validation) x seeds  -> method comparison
-  4 ablations   proposed model without ITC loss / without SupCon / without modality dropout
+  4 ablations   proposed model without ITC loss / SupCon / consistency loss / modality dropout
   5 report      tables (mean +- std over seeds), paired bootstrap significance tests, figures,
                 and the export used by the Streamlit app
 
@@ -41,9 +41,10 @@ LR_GRID = {"SGD": [0.03, 0.1, 0.3], "Adam": [3e-4, 1e-3, 3e-3], "AdamW": [3e-4, 
 METRICS = {"i2i": "More like this (type)", "i2i_strict": "More like this (type + colour)",
            "text2item": "Text query -> product", "image2item": "Photo query -> product"}
 ABLATIONS = {"no_itc": {"lambda_itc": 0.0}, "no_supcon": {"lambda_sup": 0.0},
-             "no_modality_dropout": {"modality_dropout": 0.0}}
+             "no_consistency": {"lambda_cons": 0.0}, "no_modality_dropout": {"modality_dropout": 0.0}}
 ABLATION_NAMES = {"full": "Gated fusion (full model)", "no_itc": "- image-text contrastive loss",
-                  "no_supcon": "- supervised contrastive loss", "no_modality_dropout": "- modality dropout"}
+                  "no_supcon": "- supervised contrastive loss", "no_consistency": "- missing-modality consistency",
+                  "no_modality_dropout": "- modality dropout"}
 
 
 class Study:

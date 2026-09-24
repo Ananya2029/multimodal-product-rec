@@ -1,9 +1,12 @@
 """Training and evaluation of one from-scratch run.
 
 Loss = lambda_sup * [SupCon(f, type) + 0.5 * SupCon(f, type+colour)] + lambda_itc * InfoNCE(z_img, z_txt)
+       + lambda_cons * [(1 - cos(f_img_only, sg(f_full))) + (1 - cos(f_txt_only, sg(f_full)))]
     SupCon  supervised contrastive loss (Khosla et al., 2020) on the retrieval embedding f
     InfoNCE symmetric image-text contrastive loss (as in CLIP, Radford et al., 2021), aligns the
             modalities so text-only / image-only queries work
+    consistency  missing-modality consistency (fused methods): the fused embedding computed from only the
+            image or only the title is pulled towards the full image+title embedding (sg = stop-gradient)
 
 Test metrics (on products never seen in training), NDCG@10:
     i2i         "more like this": relevant = same article type
@@ -42,6 +45,7 @@ class RunConfig:
     batch: int = 256
     lambda_sup: float = 1.0
     lambda_itc: float = 1.0
+    lambda_cons: float = 1.0
     modality_dropout: float = 0.3
     temperature: float = 0.1
     warmup_epochs: int = 1
@@ -174,12 +178,17 @@ def train_run(cfg: RunConfig, data: ScratchData, device="cpu", data_t=None, verb
             x = to_input(data_t["images"][j], True) if model.use_img else None
             t = data_t["tokens"][j] if model.use_txt else None
             with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_amp):
-                out = model.encode(x, t, drop_p=cfg.modality_dropout)
+                out = model.encode(x, t, drop_p=cfg.modality_dropout, consistency=cfg.lambda_cons > 0)
             f = out["f"].float()
             loss = cfg.lambda_sup * (supcon(f, y_type[j], cfg.temperature)
                                      + 0.5 * supcon(f, y_fine[j], cfg.temperature))
             if cfg.lambda_itc > 0 and out["z_img"] is not None and out["z_txt"] is not None:
                 loss = loss + cfg.lambda_itc * info_nce(out["z_img"].float(), out["z_txt"].float(), model.logit_scale)
+            if "f_full" in out:
+                target = out["f_full"].detach().float()
+                cons = ((1 - (out["f_img_only"].float() * target).sum(-1))
+                        + (1 - (out["f_txt_only"].float() * target).sum(-1))).mean()
+                loss = loss + cfg.lambda_cons * cons
             opt.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.unscale_(opt)

@@ -10,7 +10,7 @@ We recommend products by learning a **joint embedding of product photos and titl
 | Text encoder | Own tokenizer (vocabulary from *training* titles only) → word embeddings + positions → 2-layer Transformer → 256-d |
 | Fusion methods | **image**, **text**, **early** (concatenation + MLP), **late** (weighted score sum), **gated** (proposed: per-dimension learned gate between modalities), **xattn** (proposed: title tokens attend over image regions) |
 | Missing modality | learned null vectors + **modality dropout** in training, so every fused model also answers text-only or photo-only queries |
-| Loss | supervised contrastive loss on product type (+ type & colour) + symmetric image–text contrastive loss (InfoNCE) |
+| Loss | supervised contrastive loss on product type (+ type & colour) + symmetric image–text contrastive loss (InfoNCE) + **missing-modality consistency loss** (proposed: the text-only and image-only fused embeddings are pulled toward the full image + text embedding, with stop-gradient) |
 | Optimizers | SGD (Nesterov momentum), Adam, AdamW, each with its learning rate tuned on validation; cosine schedule with warm-up |
 
 ## Experimental protocol (`src/scratch/experiments.py`)
@@ -18,12 +18,12 @@ We recommend products by learning a **joint embedding of product photos and titl
 2. **Learning-rate tuning** for each optimizer on the validation split.
 3. **Optimizer comparison:** proposed gated model × {SGD, Adam, AdamW} × 3 seeds. The best optimizer is chosen **on validation**.
 4. **Method comparison:** 6 methods × best optimizer × 3 seeds.
-5. **Ablations:** the gated model without the image–text loss, without the supervised loss, and without modality dropout.
+5. **Ablations:** the gated model without the image–text loss, without the supervised loss, without the consistency loss, and without modality dropout.
 6. **Metrics:** NDCG@10 on the test products for four tasks: *more like this* (same type; same type + colour), *text query → product* and *photo query → product*. Results are reported as mean ± std over seeds, with **paired bootstrap significance tests** of each proposed method against every baseline.
 
 ## How to run
 
-**1. Train on Google Colab (GPU, about 3 hours, resumable)**
+**1. Train on Google Colab (GPU, about 3–4 hours, resumable)**
 1. `python colab/make_code_zip.py` creates `colab/mmrec_code.zip`.
 2. Open `colab/train_from_scratch.ipynb` in Colab, select a T4 GPU, and choose **Run all**. When asked, upload `mmrec_code.zip`. Progress is saved to Google Drive.
 3. Unzip the downloaded `mmrec_scratch_results.zip` into this folder.
