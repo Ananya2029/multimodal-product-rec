@@ -70,7 +70,7 @@ if page == "📊 Results":
 {n_types} product types, split 70 / 15 / 15 into train / validation / test.
 The <b>{summ['n_test']:,} test products are never seen</b> during training or tuning.</div>
 <div class="step"><b>2 · Encoders, trained from scratch.</b> A ResNet-style <b>CNN</b> reads the 64×64 photo; our own
-tokenizer and a <b>Transformer</b> read the title. No pretrained weights are used anywhere.</div>
+tokenizer and a <b>Transformer</b> read the title.</div>
 <div class="step"><b>3 · Proposed gated fusion.</b> A learned gate decides, for every feature and every product,
 how much to trust the image vs. the title, and produces one 128-d product embedding.
 Products with close embeddings are recommended.</div>
@@ -188,23 +188,11 @@ else:
                 "training**")
     mode = st.radio("Search by", ["💬 Text", "📷 Photo", "🧩 Photo + text", "🧥 Similar to a product"],
                     horizontal=True, key="mode")
-    with st.expander("Filters"):
-        f1, f2, f3 = st.columns(3)
-        genders = f1.multiselect("Gender", sorted(cat["gender"].dropna().unique()), key="f_gender")
-        cats = f2.multiselect("Category", sorted(cat["masterCategory"].dropna().unique()), key="f_cat")
-        k = f3.slider("Results", 5, 20, 10, 5, key="k")
+    k = st.slider("Number of results", 5, 20, 10, 5, key="k")
 
     def results(q, exclude=None, ref_type=None):
-        s = serve.scores(PROPOSED, q).astype(float)
-        if genders:
-            s[~cat["gender"].isin(genders).values] = -np.inf
-        if cats:
-            s[~cat["masterCategory"].isin(cats).values] = -np.inf
-        idx, sc = serve.top_k(s, k, exclude)
+        idx, sc = serve.top_k(serve.scores(PROPOSED, q), k, exclude)
         hits = [(i, v) for i, v in zip(idx, sc) if np.isfinite(v)]
-        if not hits:
-            st.info("No products match the filters.")
-            return
         cols = st.columns(5)
         for n, (i, v) in enumerate(hits):
             r = cat.iloc[i]
@@ -248,13 +236,18 @@ else:
             a.image(img, width=140)
             results(serve.encode_query(PROPOSED, image=img, text=text))
     else:
-        if "item" not in st.session_state:
-            st.session_state.item = int(np.random.default_rng(0).integers(len(cat)))
+        # the button writes the dropdown's own state *before* the dropdown is drawn (a keyed widget ignores
+        # later changes to its `index` argument, which is why the button previously had no effect)
+        if "q_item" not in st.session_state:
+            st.session_state.q_item = int(np.random.default_rng(0).integers(len(cat)))
+
+        def pick_random():
+            st.session_state.q_item = int(np.random.randint(len(cat)))
+
         a, b = st.columns([3, 1])
-        if b.button("🎲 Random product", width="stretch"):
-            st.session_state.item = int(np.random.randint(len(cat)))
-        i = a.selectbox("Product", range(len(cat)), index=st.session_state.item,
-                        format_func=lambda j: cat.at[j, "productDisplayName"], key="q_item")
+        b.button("🎲 Random product", width="stretch", on_click=pick_random)
+        i = a.selectbox("Product", range(len(cat)), format_func=lambda j: cat.at[j, "productDisplayName"],
+                        key="q_item")
         q = cat.iloc[i]
         c1, c2 = st.columns([1, 5])
         c1.image(q["image_file"], width="stretch")

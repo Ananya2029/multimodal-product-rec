@@ -30,14 +30,17 @@ def main():
         check(at, mode.encode("ascii", "ignore").decode())
     at.radio(key="mode").set_value(at.radio(key="mode").options[0]).run()
     at.text_input(key="q_text").set_value("blue jeans for men").run()
-    at.multiselect(key="f_gender").set_value(["Women"]).run()
-    check(at, "text search + filter")
-    at.multiselect(key="f_cat").set_value(["Footwear"]).run()
-    at.multiselect(key="f_gender").set_value(["Women", "Men"]).run()
-    check(at, "filters")
+    at.slider(key="k").set_value(20).run()
+    check(at, "text search + number of results")
     at.radio(key="mode").set_value(at.radio(key="mode").options[3]).run()
-    at.button[0].click().run()
-    check(at, "similar products + random")
+    seen = {at.selectbox(key="q_item").value}
+    for _ in range(3):  # the Random button must actually change the selected product
+        at.button[0].click().run()
+        check(at, "random product")
+        seen.add(at.selectbox(key="q_item").value)
+    if len(seen) < 2:
+        print("FAIL [random product]: the selected product did not change")
+        sys.exit(1)
     print("OK")
 
 
