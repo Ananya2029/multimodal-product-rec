@@ -8,3 +8,9 @@ __pycache__/
 venv/
 .ipynb_checkpoints/
 .DS_Store
+
+# smoke-test outputs (replaced by the Colab results; commit those once they exist)
+models/scratch/
+embeddings/scratch/
+results/scratch/
+colab/mmrec_code.zip

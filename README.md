@@ -1,161 +1,61 @@
-# Multimodal Product Recommendation (image + text embeddings)
+# Multimodal Product Recommendation with Image and Text Embeddings Learned from Scratch
 
-Recommends products by combining **image embeddings** and **text embeddings**. It compares text-only, image-only and multimodal models, and ships a Streamlit app.
+We recommend products by learning a **joint embedding of product photos and titles**. Every encoder is trained **from random initialisation**: no ImageNet, CLIP or BERT weights, and no pretrained tokenizer. The study compares image-only, text-only and four fusion methods, including two proposed ones. It also compares three optimizers (SGD, Adam, AdamW) and runs ablations of each training component.
 
-## Results (3,000 products, 66 article types, CPU)
+## Method (`src/scratch/`)
 
-![Model comparison](results/model_comparison.png)
+| Component | Design |
+|---|---|
+| Image encoder | ResNet-style CNN (6 residual blocks, 64×64 input → 8×8×256 regions → 256-d) |
+| Text encoder | Own tokenizer (vocabulary from *training* titles only) → word embeddings + positions → 2-layer Transformer → 256-d |
+| Fusion methods | **image**, **text**, **early** (concatenation + MLP), **late** (weighted score sum), **gated** (proposed: per-dimension learned gate between modalities), **xattn** (proposed: title tokens attend over image regions) |
+| Missing modality | learned null vectors + **modality dropout** in training, so every fused model also answers text-only or photo-only queries |
+| Loss | supervised contrastive loss on product type (+ type & colour) + symmetric image–text contrastive loss (InfoNCE) |
+| Optimizers | SGD (Nesterov momentum), Adam, AdamW, each with its learning rate tuned on validation; cosine schedule with warm-up |
 
-| System | More like this<br>NDCG@10 | Same type + colour<br>NDCG@10 | Text search<br>NDCG@10 | Encode ms/item |
-|---|---|---|---|---|
-| TF-IDF (title) | 0.658 | 0.352 | 0.402 | 0.07 |
-| MiniLM (title) | 0.733 | 0.309 | 0.607 | 9 |
-| CLIP text | 0.758 | 0.518 | 0.570 | 25 |
-| ResNet50 image | 0.679 | 0.257 | n/a | 166 |
-| DINOv2 image | 0.758 | 0.244 | n/a | 207 |
-| SigLIP image | 0.807 | 0.291 | 0.618 | 528 |
-| **DINOv2 + MiniLM (late fusion)** | **0.835** | 0.332 | 0.607 | 215 |
-| **CLIP image + text** | 0.815 | **0.527** | **0.625** | 171 |
+## Experimental protocol (`src/scratch/experiments.py`)
+1. **Data:** the full *Fashion Product Images (small)* catalog (about 44k products). Product types with fewer than 20 items are dropped. Stratified **70/15/15** train/val/test split. The **test products are never used** for training, tuning or model selection.
+2. **Learning-rate tuning** for each optimizer on the validation split.
+3. **Optimizer comparison:** proposed gated model × {SGD, Adam, AdamW} × 3 seeds. The best optimizer is chosen **on validation**.
+4. **Method comparison:** 6 methods × best optimizer × 3 seeds.
+5. **Ablations:** the gated model without the image–text loss, without the supervised loss, and without modality dropout.
+6. **Metrics:** NDCG@10 on the test products for four tasks: *more like this* (same type; same type + colour), *text query → product* and *photo query → product*. Results are reported as mean ± std over seeds, with **paired bootstrap significance tests** of each proposed method against every baseline.
 
-All 11 systems are in [`results/model_comparison.csv`](results/model_comparison.csv).
+## How to run
 
-### Verdict: which model is best?
+**1. Train on Google Colab (GPU, about 3 hours, resumable)**
+1. `python colab/make_code_zip.py` creates `colab/mmrec_code.zip`.
+2. Open `colab/train_from_scratch.ipynb` in Colab, select a T4 GPU, and choose **Run all**. When asked, upload `mmrec_code.zip`. Progress is saved to Google Drive.
+3. Unzip the downloaded `mmrec_scratch_results.zip` into this folder.
 
-| Task | Winner | NDCG@10 (95% CI) | Runner-up | Significant? |
-|---|---|---|---|---|
-| More like this (same type) | DINOv2 + MiniLM | 0.835 (0.827–0.843) | CLIP image + text, 0.815 | ✅ p < 0.001 |
-| More like this (type + colour) | **CLIP image + text** | 0.527 (0.516–0.539) | CLIP text, 0.518 | ✅ p < 0.001 |
-| Text search | **CLIP image + text** | 0.625 (0.589–0.660) | SigLIP image, 0.618 | ≈ tie (p = 0.72) |
-
-**Overall winner: CLIP image + text** (mean rank 1.33 of 11 across the three tasks). Confidence intervals come from bootstrap resampling of the queries. The p-values come from a paired bootstrap test of the winner against the runner-up. The full ranking is in [`results/summary.json`](results/summary.json).
-
-### Key findings
-1. **Multimodal beats unimodal.** Each fused system scores above both of its single-modality parts on "more like this".
-2. **CLIP image + text is the best all-rounder.** It is best at matching type + colour and best at text search, at moderate cost. It is the app's default.
-3. **Image models barely capture colour** (strict NDCG about 0.25–0.29). Colour information mostly comes from the product title.
-4. **The best fusion weight is 0.3–0.6 on the image side** (see sweep below). Using only one modality at either extreme loses accuracy.
-5. **SigLIP's text tower does poorly on short product titles** (search 0.31), despite a strong image tower. It is also about 3× slower than CLIP on CPU.
-
-![Fusion sweep](results/fusion_sweep.png)
-
-**Limitations:** brand names in titles bias the text similarity toward the same brand. The relevance labels (type, colour, gender) are proxies for real user preference; there is no click or purchase data. The catalog is a 3k-item sample.
-
-## Trained fusion model: optimizer comparison (`src/fusion.py`)
-
-The comparison above uses pretrained models only, with no training. On top of the frozen CLIP image + text embeddings, we also train a small **fusion network** (an MLP with a residual path, 1024 → 256-d). It uses a **supervised contrastive loss** on product type and colour, plus modality dropout so it still works with text-only or image-only queries.
-
-The optimizers are compared fairly:
-1. Products are split 70/30. The 900 test products are never used for training or tuning.
-2. Each optimizer gets its own learning-rate / weight-decay search on a validation split taken from the training data.
-3. The tuned optimizers are retrained with **3 seeds**. Results are shown as mean ± std on the test products.
-
-| Model (900 unseen test products) | More like this | Type + colour | Text search |
-|---|---|---|---|
-| CLIP image + text, zero-shot (no training) | 0.763 | 0.478 | 0.698 |
-| Trained fusion, **SGD** (momentum 0.9, lr 0.05) | **0.920 ± 0.003** | **0.631 ± 0.001** | **0.809 ± 0.007** |
-| Trained fusion, **Adam** (lr 0.003) | 0.919 ± 0.003 | 0.628 ± 0.001 | 0.789 ± 0.009 |
-| Trained fusion, **AdamW** (lr 0.003, wd 0.05) | 0.919 ± 0.003 | 0.628 ± 0.000 | 0.788 ± 0.010 |
-
-![Optimizer curves](results/optimizer_curves.png)
-
-**Findings:** training lifts every metric by roughly 0.15 NDCG. The choice of optimizer matters much less: SGD is slightly better on text search (about 2 std), and all three are tied on "more like this". Adam and AdamW are almost identical, because decoupled weight decay has little effect over 40 short epochs.
-
-## Conditional GAN (`src/gan.py`)
-
-A **conditional DCGAN** generates new 64×64 product images for a chosen category. The app then retrieves the most similar real products, as a "design a new product" demo.
-* Generator: noise + category embedding → transposed convolutions. Discriminator: spectral norm, minibatch-std feature and projection conditioning. Loss: hinge.
-* Optimizer: **Adam with TTUR** (discriminator lr 4e-4, generator lr 1e-4, betas 0.0/0.9).
-* **DiffAugment** is applied to real and fake images. Without it, the first training run **mode-collapsed**: every sample within a category was identical, because the discriminator memorised the 2.7k photos.
-* Evaluation, measured in CLIP space: **FD-CLIP** (Fréchet distance to real images, lower is better) and **class accuracy**, where a classifier trained on real photos checks whether generated images look like the requested category. See `results/gan_metrics.json`.
-
-## Internet and REST API
-
-* **REST API** (`api.py`, FastAPI): `python -m uvicorn api:app --port 8000`. Interactive docs are at http://localhost:8000/docs. It provides recommend, text search, image upload, image URL, live-shop search and GAN generation. See the docstring in `api.py` for the full endpoint list.
-* **Image from URL** (`src/web.py`): search using any product photo on the web. Only http(s) links are accepted. Private and local network addresses are refused, including via redirects, and downloads are capped at 10 MB.
-* **Live shop catalog** (`src/live.py`): products are fetched from the public **dummyjson.com** API and embedded with CLIP. You can then search them, or match them against our fashion catalog: `python -m src.live`, or the 🌐 tab in the app.
-
-## Pipeline
-
-```
-catalog (image + title)  ─┬─ image encoder ─► I  (N × d_i, L2-normalised)
-                          └─ text encoder  ─► T  (N × d_t, L2-normalised)
-
-score(query, item) = w · cos(q_img, I_item) + (1 − w) · cos(q_txt, T_item)
-```
-
-* **Late fusion**: `w` is the image weight. `w = 1` means image only and `w = 0` means text only.
-* **Shared space (CLIP / SigLIP)**: images and text are embedded into the same space. A *text* query can therefore be matched against product *images* (zero-shot visual search). An image and a text modifier can also be added together into one composed query, such as "this shoe, but in red".
-
-## Models compared
-
-| Group | System | Encoder(s) |
-|---|---|---|
-| text | TF-IDF (title) | word + bigram TF-IDF, lexical baseline |
-| text | MiniLM (title) | `sentence-transformers/all-MiniLM-L6-v2` |
-| text | CLIP text / SigLIP text | text tower of the VLM |
-| image | ResNet50 image | torchvision ImageNet ResNet-50 (supervised CNN) |
-| image | DINOv2 image | `facebook/dinov2-small` (self-supervised ViT) |
-| image | CLIP image / SigLIP image | image tower of the VLM |
-| multimodal | DINOv2 + MiniLM | late fusion of two separate unimodal models |
-| multimodal | CLIP image + text | `openai/clip-vit-base-patch32` |
-| multimodal | SigLIP image + text | `google/siglip-base-patch16-224` |
-
-## Evaluation (`src/evaluate.py`)
-
-* **Item-to-item ("more like this")**: every product is used as a query.
-  * *i2i*: a result is relevant if it has the same `articleType`.
-  * *i2i-strict*: a result is relevant only if it has the same `articleType` **and** `baseColour`.
-* **Text search**: shopper-style queries built from metadata, for example *"navy blue shirts for men"*. A result is relevant if its colour, type and gender all match the query.
-* Metrics: P@5, P@10, mAP@10 and NDCG@10. The evaluation also records encoding speed (ms/item) and runs a sweep over the fusion weight `w`.
-
-Only the product **title** is embedded as text. Category and colour columns are kept out of the text because they are the evaluation labels, so including them would leak the answers.
-
-## Run
-
+**2. Local app (CPU; the models are small, 0.4–4M parameters)**
 ```bash
 pip install -r requirements.txt
-python -m src.data          # download 3,000 products (images + metadata)
-python -m src.embeddings    # embed catalog with all models (~1 h on an 8-core CPU, minutes on a GPU)
-python -m src.evaluate      # comparison table, significance tests + charts -> results/
-python -m src.fusion        # train fusion heads with SGD / Adam / AdamW (~6 min on CPU)
-python -m src.gan           # train the conditional GAN (~35 min on CPU; faster on a GPU / Colab)
-python -m src.live          # fetch the live shop catalog from dummyjson.com (needs internet)
-python -m streamlit run app.py   # the application -> http://localhost:8501
-python -m uvicorn api:app --port 8000   # the REST API -> http://localhost:8000/docs
-python -m pytest -q         # tests: metrics, fusion, all 11 systems, the Streamlit app
+python -m streamlit run app.py
 ```
+The app offers: 📊 **Model & results** (method, optimizer and ablation tables, significance tests, GAN results, pretrained reference), 🧥 more like this, 💬 text search, 📷 image search and 🧩 image + text. Its catalog is the unseen test split.
 
-`notebook.ipynb` walks through the whole pipeline with figures: dataset, models, examples, evaluation, t-SNE of the embedding space, zero-shot search and composed queries.
+**Tests:** `python run_tests.py`. **Local end-to-end check:** `python -m src.scratch.data --source local`, then `python -m src.scratch.experiments --smoke`.
 
-Change `N_PRODUCTS` in `src/config.py` to use a bigger catalog. The full dataset has about 44k products, which is practical on a GPU.
+## Results
+The from-scratch results (tables and figures) are written to `results/scratch/` by the Colab run: `method_comparison.csv/.png`, `optimizer_comparison.csv/.png`, `optimizer_curves.png`, `ablations.csv/.png`, `significance.csv`, `summary.json`.
 
-## App features
+### Conditional GAN (`src/gan.py`, trained from scratch)
+A conditional DCGAN (hinge loss, spectral norm, minibatch-std, DiffAugment, Adam with TTUR) generates 64×64 product images for each category. The first run mode-collapsed; DiffAugment fixed it. After 50 epochs on CPU, the FD in CLIP space fell from 0.72 (untrained generator) to **0.50** (real images score 0.035). Category accuracy is **14%** (chance is 7%).
 
-* **Model comparison** (first tab): the winner banner, per-task winner cards with confidence intervals and significance, the overall ranking, detailed metrics, charts and a side-by-side view of models on one product.
-* **More like this**: pick a catalog product and get similar products.
-* **Text search**: free-text queries.
-* **Image search**: upload a photo and find visually similar products.
-* **Image + text**: a composed query made from a reference image plus a text modifier.
-* **Internet**: search with an image URL; fetch and search a live shop catalog; match live products to ours.
-* **GAN**: generate new product designs per category and find similar real products.
-* Sidebar: model selector, image/text fusion slider, and gender/category filters.
+### Reference only: pretrained encoders (`src/evaluate.py`)
+To show how far large-scale pretraining reaches, the same tasks were scored on a 3,000-product sample with **pretrained** encoders (CLIP, SigLIP, DINOv2, MiniLM, ResNet-50) and TF-IDF. These models are **not** part of our method. The best was CLIP image + text (NDCG@10: 0.815 same type, 0.527 same type + colour, 0.625 text search). See `results/model_comparison.csv` and `results/summary.json`.
 
 ## Project layout
-
 ```
-src/config.py        paths & settings
-src/data.py          dataset download -> data/catalog.csv + data/images/
-src/encoders.py      TF-IDF, MiniLM, ResNet50, DINOv2, CLIP, SigLIP behind one API
-src/embeddings.py    compute + cache embeddings -> embeddings/*.npy
-src/recommender.py   systems (image model, text model) + weighted fusion scoring
-src/evaluate.py      offline comparison, CIs + significance tests -> results/
-src/fusion.py        trained fusion head + SGD / Adam / AdamW comparison
-src/gan.py           conditional DCGAN (DiffAugment, TTUR) + FD-CLIP evaluation
-src/query.py         query encoding shared by app, API and tests
-src/web.py           safe image download from URLs
-src/live.py          live product catalog from the dummyjson.com API
-app.py               Streamlit application
-api.py               REST API (FastAPI)
-notebook.ipynb       end-to-end walkthrough with figures
-tests/               pytest suite: metrics, all systems, trained heads, GAN, URL safety, REST API, app
+src/scratch/data.py         44k catalog -> 64x64 images, tokenizer, stratified split
+src/scratch/models.py       CNN, Transformer, 6 fusion methods (gated & cross-attention proposed)
+src/scratch/train.py        losses, training loop, early stopping, test metrics
+src/scratch/experiments.py  tuning, optimizer / method comparison, ablations, significance, figures, export
+src/scratch/serve.py        loads exported models for the app
+colab/                      Colab notebook + code packager
+app.py                      Streamlit demo (from-scratch models only)
+src/gan.py                  conditional DCGAN
+src/evaluate.py, ...        pretrained reference baselines, REST API (api.py), earlier experiments
+tests/                      pytest suite (python run_tests.py)
 ```
