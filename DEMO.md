@@ -7,24 +7,27 @@
    cd "D:\D drive\Project\claude\multimodal_recsys"
    python -m streamlit run app.py
    ```
-3. The browser opens at **http://localhost:8501**. The models are small, so there's no long loading wait any more.
+3. The browser opens at **http://localhost:8501**. If the app was already running, stop it with Ctrl+C and start it again so it loads the latest version.
 4. Keep one product photo on the desktop for image search, e.g. any file from `data\scratch\test_images\`.
 
 ## What the project is (30-second pitch)
 "We recommend products by learning **one embedding from the product photo and the title together**. Everything is trained **from scratch**: a CNN for images, a Transformer for titles, and our own tokenizer, with no pretrained weights. We compare 6 ways of combining the two modalities, 3 optimizers and 5 training components, on **44,013 products**. Each result is tested on **6,602 products the model never saw**, with 3 random seeds and significance tests."
 
 ## Demo flow (about 10 minutes)
-| # | Section | What to do | What to say |
+The app has two pages: **📊 Results** and **🛍️ Try the proposed model**.
+
+| # | Page | What to do | What to say |
 |---|---|---|---|
-| 1 | 📊 Model & results | The winner cards and the method table | "6 methods, mean ± std over 3 seeds, on unseen products." |
-| 2 | (scroll) | The method comparison chart | Key findings (below) |
-| 3 | (scroll) | Optimizer table and curves | "SGD, Adam and AdamW, each tuned on validation data. SGD was selected on validation." |
-| 4 | (scroll) | Ablation table | "The supervised contrastive loss is essential. Without it, accuracy drops from 0.96 to 0.79." |
-| 5 | (scroll) | GAN results | "A conditional GAN, also trained from scratch, generates new product images." |
-| 6 | 🧥 More like this | 🎲 Random product, 2–3 times | "These catalog products were never seen in training." |
-| 7 | 💬 Text search | `black handbag for women`, `blue jeans for men` | Switch the sidebar model to **Late fusion**: it's the best for text queries |
-| 8 | 📷 Image search | Upload the prepared photo | Use **Cross-attention** or **Gated**: the best for photo queries |
-| 9 | 🧩 Image + text | Photo + `red` | "The fused embedding combines both kinds of query." |
+| 1 | 📊 Results: *What we did* | Walk through steps 1–5 and the architecture diagram | "Photo → CNN, title → Transformer, both trained from scratch, combined by our gated fusion into one product embedding." |
+| 2 | 📊 *What we achieved* | The 4 green metric cards | "Our model on 6,602 unseen products: 0.956 for similar products, +0.14 over image-only; better photo search than an image-only model." |
+| 3 | (scroll) | Key findings, then the comparison table (our model is highlighted) | "Compared with 5 baselines over 3 seeds, with significance tests." |
+| 4 | (scroll) | Optimizer table and curves | "SGD, Adam and AdamW, each tuned on validation; SGD selected." |
+| 5 | (scroll) | Ablation table | "The supervised contrastive loss matters most." |
+| 6 | (scroll) | GAN | "A conditional GAN, also from scratch, generates new product images." |
+| 7 | 🛍️ Try it: 🧥 Similar to a product | 🎲 Random product, 2–3 times | "Products the model never saw in training; ✅ = same type." |
+| 8 | 💬 Text | `black handbag for women`, `blue jeans for men` | "Search by words." |
+| 9 | 📷 Photo | Upload the prepared photo | "Search by photo." |
+| 10 | 🧩 Photo + text | Photo + `red` | "Both together in one query." |
 
 ## Results (test NDCG@10, 6,602 unseen products, mean of 3 seeds)
 | Method | More like this (type) | Type + colour | Text query | Photo query |
