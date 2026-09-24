@@ -27,7 +27,7 @@ The app has two pages: **📊 Results** and **🛍️ Try the proposed model**.
 | 7 | 🛍️ Try it: 🧥 Similar to a product | 🎲 Random product, 2–3 times | "Products the model never saw in training; ✅ = same type." |
 | 8 | 💬 Text | `black handbag for women`, `blue jeans for men` | "Search by words." |
 | 9 | 📷 Photo | Upload the prepared photo | "Search by photo." |
-| 10 | 🧩 Photo + text | Photo + `red` | "Both together in one query." |
+| 10 | 🧩 Photo + text | Watch photo `30039.jpg` + `white watch` | "Both together in one query: same kind of product, new colour." |
 
 ## Results (test NDCG@10, 6,602 unseen products, mean of 3 seeds)
 | Method | More like this (type) | Type + colour | Text query | Photo query |
