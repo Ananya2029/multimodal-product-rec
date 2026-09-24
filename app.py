@@ -240,7 +240,10 @@ else:
         a, b = st.columns([1, 2])
         with a:
             img = upload("Reference photo", "q_combo")
-        text = b.text_input("Plus words, e.g. a colour", "red", key="q_combo_text")
+        text = b.text_input("Plus words: a colour and the product type", "", key="q_combo_text",
+                            placeholder="e.g. white watch, black tshirt, white sports shoes")
+        b.caption("Tip: write the colour together with the product type (\"white watch\"). A colour word alone "
+                  "can outweigh the photo.")
         if img is not None:
             a.image(img, width=140)
             results(serve.encode_query(PROPOSED, image=img, text=text))
