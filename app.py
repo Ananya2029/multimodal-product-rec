@@ -1,14 +1,11 @@
-"""Multimodal product recommendation (image + text embeddings learned from scratch) - Streamlit app.
+"""Multimodal product recommendation with image and text embeddings learned from scratch - Streamlit app.
 
     python -m streamlit run app.py
 
-Models are trained by colab/train_from_scratch.ipynb (src/scratch/); unzip its results into this folder.
-The catalog shown here is the TEST split: products that no model saw during training.
+Two pages: the study (what we did, what we achieved) and a demo of the proposed gated-fusion model.
+The demo catalog is the TEST split: 6,602 products the model never saw during training.
 """
 import json
-import os
-
-os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
 import numpy as np
 import pandas as pd
@@ -19,252 +16,245 @@ from src.config import RESULTS_DIR
 from src.scratch import serve
 from src.scratch.models import METHOD_NAMES
 
-st.set_page_config(page_title="Multimodal Recommender", page_icon="🛍️", layout="wide")
-SCRATCH_RES = serve.RES_DIR
-METRIC_LABELS = {"i2i": "More like this (type)", "i2i_strict": "More like this (type + colour)",
-                 "text2item": "Text query → product", "image2item": "Photo query → product"}
+st.set_page_config(page_title="Multimodal Product Recommendation", page_icon="🛍️", layout="wide")
+PROPOSED = "gated"
+RES = serve.RES_DIR
+METRICS = {"i2i": "Similar products (same type)", "i2i_strict": "Similar products (same type + colour)",
+           "text2item": "Search by text", "image2item": "Search by photo"}
+
+st.markdown("""<style>
+.block-container {padding-top: 2rem; max-width: 1200px;}
+div[data-testid="stMetric"] {background: rgba(46,139,87,0.08); border-radius: 10px; padding: 12px 16px;}
+.step {border-left: 4px solid #2E8B57; padding: 4px 0 4px 14px; margin-bottom: 10px;}
+.card-title {font-size: 0.85rem; font-weight: 600; line-height: 1.2; height: 2.4em; overflow: hidden;}
+.card-sub {font-size: 0.75rem; opacity: 0.75;}
+</style>""", unsafe_allow_html=True)
 
 
-# ------------------------------------------------------------------ helpers
-def read_csv(path):
-    return pd.read_csv(path) if path.exists() else None
+def read_csv(name):
+    f = RES / name
+    return pd.read_csv(f) if f.exists() else None
 
 
-def mean_std(df, k):
-    m, s = df.get(f"{k} mean"), df.get(f"{k} std")
-    if m is None:
-        return ["n/a"] * len(df)
-    return ["n/a" if pd.isna(a) else f"{a:.3f}" + ("" if pd.isna(b) else f" ± {b:.3f}") for a, b in zip(m, s)]
+def fmt(mean, std):
+    return "–" if pd.isna(mean) else f"{mean:.3f} ± {std:.3f}"
 
 
-def apply_filters(cat, s):
-    mask = np.ones(len(cat), bool)
-    if st.session_state.get("f_gender"):
-        mask &= cat["gender"].isin(st.session_state.f_gender).values
-    if st.session_state.get("f_cat"):
-        mask &= cat["masterCategory"].isin(st.session_state.f_cat).values
-    s = s.astype(float).copy()
-    s[~mask] = -np.inf
-    return s
-
-
-def show_grid(cat, idx, scores, ref_type=None, cols=5):
-    hits = [(i, s) for i, s in zip(idx, scores) if np.isfinite(s)]
-    if not hits:
-        st.info("No products match the current filters.")
-        return
-    columns = st.columns(cols)
-    for n, (i, s) in enumerate(hits):
-        r = cat.iloc[i]
-        with columns[n % cols]:
-            st.image(r["image_file"], width="stretch")
-            mark = "" if ref_type is None else (" ✅" if r["articleType"] == ref_type else " ⚠️")
-            st.markdown(f"**{r['productDisplayName']}**  \n<small>{r['articleType']} · {r['baseColour']} · "
-                        f"{r['gender']}<br>score {s:.3f}{mark}</small>", unsafe_allow_html=True)
-
-
-def recommend(method, q, k, exclude=None):
-    if q is None:
-        st.warning(f"{METHOD_NAMES[method]} can't use this kind of query; pick a multimodal model in the sidebar.")
-        return None, None
-    return serve.top_k(apply_filters(cat, serve.scores(method, q)), k, exclude)
-
-
-def open_upload(upload):
-    try:
-        return Image.open(upload).convert("RGB")
-    except Exception:
-        st.error("Couldn't read that file as an image. Please upload a JPG, PNG or WEBP photo.")
-        return None
-
-
-# ------------------------------------------------------------------ sidebar
+# ------------------------------------------------------------------ header + navigation
 st.title("🛍️ Multimodal Product Recommendation")
-st.caption("Image and text embeddings learned **from scratch**: a CNN for product photos and a Transformer for "
-           "product titles, fused into one embedding. No pretrained weights.")
-ready = serve.available()
-if ready:
-    cat = serve.catalog()
-    methods = list(serve.export_info()["methods"])
-    with st.sidebar:
-        st.header("⚙️ Model")
-        method = st.selectbox("Recommendation model", methods, index=methods.index("gated") if "gated" in methods else 0,
-                              format_func=lambda m: METHOD_NAMES[m])
-        k = st.slider("Number of results", 5, 30, 10, 5)
-        st.header("🔎 Filters")
-        st.multiselect("Gender", sorted(cat["gender"].dropna().unique()), key="f_gender")
-        st.multiselect("Category", sorted(cat["masterCategory"].dropna().unique()), key="f_cat")
-        info = serve.export_info()
-        st.caption(f"Catalog: {len(cat):,} test products (never seen in training) · optimizer {info['optimizer']}")
-    if "item" not in st.session_state:
-        st.session_state.item = int(np.random.default_rng(0).integers(len(cat)))
+st.caption("Image and text embeddings learned **from scratch**, fused with a **gated fusion** network")
+page = st.radio("Page", ["📊 Results", "🛍️ Try the proposed model"], horizontal=True,
+                label_visibility="collapsed", key="page")
 
-PAGES = ["📊 Model & results", "🧥 More like this", "💬 Text search", "📷 Image search", "🧩 Image + text"]
-page = st.radio("Section", PAGES, horizontal=True, label_visibility="collapsed", key="page")
-st.divider()
-
-if page != PAGES[0] and not ready:
-    st.warning("The from-scratch models aren't trained yet. Run `colab/train_from_scratch.ipynb` on Google Colab, "
-               "then unzip `mmrec_scratch_results.zip` into the project folder.")
+summary_f = RES / "summary.json"
+if not (summary_f.exists() and serve.available()):
+    st.warning("Results not found. Unzip `mmrec_scratch_results.zip` (from the Colab/Kaggle notebook) into the "
+               "project folder.")
     st.stop()
+summ = json.loads(summary_f.read_text())
+meth = read_csv("method_comparison.csv").set_index("method")
+opt = read_csv("optimizer_comparison.csv").set_index("optimizer")
+abl = read_csv("ablations.csv").set_index("ablation")
+sig = read_csv("significance.csv")
+cat = serve.catalog()
+n_types = pd.read_csv(serve.SCRATCH_DIR / "meta.csv", usecols=["articleType"])["articleType"].nunique()
 
-# ------------------------------------------------------------------ 1. model & results
-if page == PAGES[0]:
-    summary_f = SCRATCH_RES / "summary.json"
-    if not summary_f.exists():
-        st.warning("From-scratch results are not available yet: run `colab/train_from_scratch.ipynb` on Colab.")
-    else:
-        summ = json.loads(summary_f.read_text())
-        if summ.get("epochs", 0) < 5:
-            st.error("⚠️ These are **smoke-test** results (1 epoch on a tiny dataset), only to check the pipeline. "
-                     "Run the Colab notebook for the real results.")
-        meth = read_csv(SCRATCH_RES / "method_comparison.csv")
-        st.subheader("🏆 Which fusion method gives the best recommendations?")
-        st.markdown(f"All models are trained **from scratch** on {summ['n_products']:,} products and evaluated on "
-                    f"**{summ['n_test']:,} unseen test products**. Scores are NDCG@10, as the mean ± std over "
-                    f"{len(summ['seeds'])} random seeds (optimizer: **{summ['best_optimizer']}**, chosen on validation).")
-        cards = st.columns(len(summ["winners"]))
-        for col, (k_, w) in zip(cards, summ["winners"].items()):
-            with col, st.container(border=True):
-                st.caption(METRIC_LABELS[k_])
-                st.metric(METHOD_NAMES[w["method"]], f"{w['ndcg']:.3f}")
-        view = pd.DataFrame({"Method": meth["name"]})
-        for k_, lab in METRIC_LABELS.items():
-            view[lab] = mean_std(meth, k_)
-        view["Params (M)"] = meth["params (M)"].round(2)
-        st.dataframe(view, width="stretch", hide_index=True)
-        if (SCRATCH_RES / "method_comparison.png").exists():
-            st.image(str(SCRATCH_RES / "method_comparison.png"), width="stretch")
+# ================================================================== RESULTS
+if page == "📊 Results":
+    # ------------------------------------------------------------ what we did
+    st.header("What we did")
+    c1, c2 = st.columns([1.1, 1])
+    with c1:
+        st.markdown(f"""
+<div class="step"><b>1 · Data.</b> {summ['n_products']:,} fashion products (photo + title) in
+{n_types} product types, split 70 / 15 / 15 into train / validation / test.
+The <b>{summ['n_test']:,} test products are never seen</b> during training or tuning.</div>
+<div class="step"><b>2 · Encoders, trained from scratch.</b> A ResNet-style <b>CNN</b> reads the 64×64 photo; our own
+tokenizer and a <b>Transformer</b> read the title. No pretrained weights are used anywhere.</div>
+<div class="step"><b>3 · Proposed gated fusion.</b> A learned gate decides, for every feature and every product,
+how much to trust the image vs. the title, and produces one 128-d product embedding.
+Products with close embeddings are recommended.</div>
+<div class="step"><b>4 · Training.</b> Supervised contrastive loss (same product type ⇒ close) + image–text
+contrastive loss (photo and title of a product ⇒ close). Optimizers <b>SGD, Adam and AdamW</b> were each tuned
+on validation; {summ['epochs']} epochs; {len(summ['seeds'])} random seeds; Kaggle T4 GPU.</div>
+<div class="step"><b>5 · Evaluation.</b> NDCG@10 on the unseen test products for four tasks: similar products
+(same type / same type + colour), search by text, search by photo. We compare against 5 baselines and
+test significance with a paired bootstrap.</div>
+""", unsafe_allow_html=True)
+    with c2:
+        st.graphviz_chart("""
+digraph {
+  rankdir=TB; bgcolor="transparent"; node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11];
+  photo [label="Product photo\\n64×64", fillcolor="#dbe9f6"];
+  title [label="Product title\\n\\"Men Navy Blue Shirt\\"", fillcolor="#dbe9f6"];
+  cnn [label="CNN\\n(6 residual blocks)", fillcolor="#fde2c8"];
+  tr [label="Transformer\\n(own tokenizer)", fillcolor="#fde2c8"];
+  gate [label="Gated fusion\\ng = σ(W[h_img ; h_txt])\\nh = g·h_img + (1−g)·h_txt", fillcolor="#c9ecd6"];
+  emb [label="Product embedding\\n(128-d)", fillcolor="#c9ecd6"];
+  rec [label="Recommendations\\n(nearest products)", fillcolor="#eeeeee"];
+  photo -> cnn -> gate; title -> tr -> gate; gate -> emb -> rec;
+}""")
 
-        sig = read_csv(SCRATCH_RES / "significance.csv")
-        if sig is not None and len(sig):
-            with st.expander("Statistical significance (paired bootstrap, proposed vs. each baseline)"):
-                s = sig.copy()
-                s["metric"] = s["metric"].map(METRIC_LABELS)
-                s["proposed"] = s["proposed"].map(METHOD_NAMES)
-                s["vs"] = s["vs"].map(METHOD_NAMES)
-                s["significant (p<0.05)"] = np.where(s["p_value"] < 0.05, "✅", "–")
-                st.dataframe(s[["metric", "proposed", "vs", "proposed_ndcg", "other_ndcg", "diff", "p_value",
-                                "significant (p<0.05)"]].round(4), width="stretch", hide_index=True)
+    # ------------------------------------------------------------ what we achieved
+    st.header("What we achieved")
+    g, img = meth.loc[PROPOSED], meth.loc["image"]
+    cols = st.columns(4)
+    for col, (k, label) in zip(cols, METRICS.items()):
+        base = img.get(f"{k} mean") if k != "text2item" else meth.loc["text"].get(f"{k} mean")
+        base_name = "image-only" if k != "text2item" else "text-only"
+        col.metric(label, f"{g[f'{k} mean']:.3f}",
+                   None if pd.isna(base) else f"{g[f'{k} mean'] - base:+.3f} vs {base_name}")
+    st.caption(f"NDCG@10 of the proposed gated-fusion model on {summ['n_test']:,} unseen test products "
+               f"(mean of {len(summ['seeds'])} seeds; 1.0 = perfect ranking).")
 
-        opt = read_csv(SCRATCH_RES / "optimizer_comparison.csv")
-        if opt is not None:
-            st.subheader("⚙️ Optimizer comparison: SGD vs Adam vs AdamW")
-            st.markdown("Proposed gated-fusion model. Each optimizer's learning rate is tuned on the validation "
-                        "split, then trained with every seed.")
-            ov = pd.DataFrame({"Optimizer": opt["optimizer"], "Learning rate": opt["lr"]})
-            for k_, lab in METRIC_LABELS.items():
-                ov[lab] = mean_std(opt, k_)
-            ov["Train time (min)"] = opt["train min"].round(1)
-            st.dataframe(ov, width="stretch", hide_index=True)
-            for f in ("optimizer_curves.png", "optimizer_comparison.png"):
-                if (SCRATCH_RES / f).exists():
-                    st.image(str(SCRATCH_RES / f), width="stretch")
+    def p_of(metric, other):
+        r = sig[(sig["metric"] == metric) & (sig["proposed"] == PROPOSED) & (sig["vs"] == other)]
+        return None if r.empty else float(r["p_value"].iloc[0])
 
-        abl = read_csv(SCRATCH_RES / "ablations.csv")
-        if abl is not None:
-            st.subheader("🧪 Ablation study")
-            av = pd.DataFrame({"Variant": abl["name"]})
-            for k_, lab in METRIC_LABELS.items():
-                av[lab] = mean_std(abl, k_)
-            st.dataframe(av, width="stretch", hide_index=True)
+    p_img = p_of("image2item", "image")
+    st.markdown(f"""
+**Key findings**
+- **Combining photo and title works far better than the photo alone:** similar-product accuracy rises from
+  {img['i2i mean']:.3f} to **{g['i2i mean']:.3f}**, and same type + colour from {img['i2i_strict mean']:.3f}
+  to **{g['i2i_strict mean']:.3f}**.
+- **The fused model finds products from a photo better than an image-only model:**
+  {g['image2item mean']:.3f} vs {img['image2item mean']:.3f} (p {'< 0.001' if p_img is not None and p_img < 0.001 else f'= {p_img:.3f}'}):
+  what it learned from titles improves search by photo.
+- **One model answers every query type:** text, photo, or photo + text, via a shared embedding space.
+- **Gated fusion is the best or tied-best fusion for similar products**, and significantly better than early
+  and late fusion.
+- **Optimizer:** SGD, Adam and AdamW are within about 0.01 of each other; **{summ['best_optimizer']}** was selected
+  on validation.
+""")
 
-    # ---- GAN (trained from scratch)
+    # ---- comparison table + chart
+    st.subheader("Comparison with baselines")
+    order = ["image", "text", "early", "late", "gated", "xattn"]
+    table = pd.DataFrame({"Model": [METHOD_NAMES[m] for m in order if m in meth.index]})
+    for k, label in METRICS.items():
+        table[label] = [fmt(meth.loc[m, f"{k} mean"], meth.loc[m, f"{k} std"]) for m in order if m in meth.index]
+    table["Parameters"] = [f"{meth.loc[m, 'params (M)']:.1f} M" for m in order if m in meth.index]
+
+    def highlight(row):
+        return ["background-color: rgba(46,139,87,0.18); font-weight: 600" if "Gated" in row["Model"] else ""
+                for _ in row]
+    st.dataframe(table.style.apply(highlight, axis=1), width="stretch", hide_index=True)
+    st.caption("NDCG@10, mean ± std over 3 seeds, unseen test products. Text-only is strong on "
+               "*same type + colour* because product titles literally contain the type and colour words.")
+    if (RES / "method_comparison.png").exists():
+        st.image(str(RES / "method_comparison.png"), width="stretch")
+
+    # ---- optimizers
+    st.subheader("Optimizer comparison: SGD vs Adam vs AdamW")
+    ot = pd.DataFrame({"Optimizer": opt.index, "Learning rate (tuned)": opt["lr"].values})
+    for k, label in METRICS.items():
+        ot[label] = [fmt(opt.loc[o, f"{k} mean"], opt.loc[o, f"{k} std"]) for o in opt.index]
+    ot["Training time"] = [f"{t:.0f} min" for t in opt["train min"]]
+    st.dataframe(ot, width="stretch", hide_index=True)
+    if (RES / "optimizer_curves.png").exists():
+        st.image(str(RES / "optimizer_curves.png"), width="stretch")
+
+    # ---- ablations
+    st.subheader("What each part of the model contributes (ablation)")
+    order_a = ["full", "no_supcon", "no_itc", "no_consistency", "no_modality_dropout"]
+    at = pd.DataFrame({"Variant": [abl.loc[a, "name"] for a in order_a if a in abl.index]})
+    for k, label in METRICS.items():
+        at[label] = [f"{abl.loc[a, f'{k} mean']:.3f}" for a in order_a if a in abl.index]
+    st.dataframe(at, width="stretch", hide_index=True)
+    st.caption("Removing the supervised contrastive loss costs the most; removing the image–text contrastive loss "
+               "hurts search by text and photo. Modality dropout and the consistency loss did not help here.")
+
+    # ---- GAN
     gan_json = RESULTS_DIR / "gan_metrics.json"
     if gan_json.exists():
-        g = json.loads(gan_json.read_text())
-        st.subheader("🎨 Conditional GAN: generating new product images")
-        st.markdown("A conditional DCGAN trained from scratch generates 64×64 product images per category "
-                    "(DiffAugment, minibatch-std, TTUR; Adam optimizer).")
-        c1, c2 = st.columns(2)
-        with c1, st.container(border=True):
-            st.metric("FD-CLIP, generated vs real (lower is better)", f"{g['FD-CLIP (generated vs real)']:.3f}",
-                      f"{g['FD-CLIP (generated vs real)'] - g['FD-CLIP untrained generator (baseline)']:+.3f} "
-                      "vs untrained generator", delta_color="inverse")
-            st.caption(f"Real vs real (best possible): {g['FD-CLIP real vs real (best possible)']:.3f}")
-        with c2, st.container(border=True):
-            st.metric("Generated images recognised as the requested category",
-                      f"{g['class accuracy (generated)']:.0%}", f"chance = {g['chance accuracy']:.0%}",
-                      delta_color="off")
-            st.caption(f"Real held-out images: {g['class accuracy real held-out images']:.0%}")
-        a, b = st.columns([1, 1])
+        gm = json.loads(gan_json.read_text())
+        st.subheader("Generating new products with a GAN")
+        a, b = st.columns([1, 1.3])
+        with a:
+            st.markdown("A **conditional DCGAN**, also trained from scratch, generates new 64×64 product images "
+                        "for a chosen category (DiffAugment fixed an initial mode collapse).")
+            st.metric("Realism vs untrained generator (FD, lower is better)",
+                      f"{gm['FD-CLIP (generated vs real)']:.2f}",
+                      f"{gm['FD-CLIP (generated vs real)'] - gm['FD-CLIP untrained generator (baseline)']:+.2f}",
+                      delta_color="inverse")
+            st.metric("Recognised as the requested category", f"{gm['class accuracy (generated)']:.0%}",
+                      f"chance {gm['chance accuracy']:.0%}", delta_color="off")
         if (RESULTS_DIR / "gan_samples.png").exists():
-            a.image(str(RESULTS_DIR / "gan_samples.png"), caption="Generated samples per category")
-        if (RESULTS_DIR / "gan_losses.png").exists():
-            b.image(str(RESULTS_DIR / "gan_losses.png"), caption="Training losses")
+            b.image(str(RESULTS_DIR / "gan_samples.png"), caption="Generated samples per category", width="stretch")
 
-    # ---- reference only: pretrained models
-    ref = RESULTS_DIR / "summary.json"
-    if ref.exists():
-        with st.expander("📎 Reference only: pretrained models (not used by our method)"):
-            r = json.loads(ref.read_text())
-            st.markdown("For comparison, the same kind of task was scored with **pretrained** encoders (CLIP, "
-                        "SigLIP, DINOv2, MiniLM, ResNet-50, TF-IDF) on a 3,000-product sample. These models are "
-                        "**not** part of our from-scratch method; they indicate an upper bound from "
-                        f"large-scale pretraining. Best pretrained system: **{r['recommended']}**.")
-            if (RESULTS_DIR / "model_comparison.png").exists():
-                st.image(str(RESULTS_DIR / "model_comparison.png"), width="stretch")
+# ================================================================== DEMO
+else:
+    st.markdown(f"**Model: Gated fusion (proposed)** · catalog of **{len(cat):,} products it never saw in "
+                "training**")
+    mode = st.radio("Search by", ["💬 Text", "📷 Photo", "🧩 Photo + text", "🧥 Similar to a product"],
+                    horizontal=True, key="mode")
+    with st.expander("Filters"):
+        f1, f2, f3 = st.columns(3)
+        genders = f1.multiselect("Gender", sorted(cat["gender"].dropna().unique()), key="f_gender")
+        cats = f2.multiselect("Category", sorted(cat["masterCategory"].dropna().unique()), key="f_cat")
+        k = f3.slider("Results", 5, 20, 10, 5, key="k")
 
-    if ready:
-        st.subheader("Side-by-side on one product")
-        j = st.selectbox("Query product", range(len(cat)), index=st.session_state.item, key="cmp_item",
-                         format_func=lambda x: cat.at[x, "productDisplayName"])
-        picks = st.multiselect("Models", methods, default=[m for m in ("image", "text", "gated") if m in methods],
-                               format_func=lambda m: METHOD_NAMES[m])
-        st.image(cat.iloc[j]["image_file"], width=120)
-        for m in picks:
-            ii, ss = serve.top_k(serve.scores(m, serve.item_query(m, j)), 5, exclude=j)
-            hits = (cat.iloc[ii]["articleType"] == cat.iloc[j]["articleType"]).mean()
-            st.markdown(f"**{METHOD_NAMES[m]}** · {hits:.0%} same article type")
-            show_grid(cat, ii, ss, ref_type=cat.iloc[j]["articleType"])
+    def results(q, exclude=None, ref_type=None):
+        s = serve.scores(PROPOSED, q).astype(float)
+        if genders:
+            s[~cat["gender"].isin(genders).values] = -np.inf
+        if cats:
+            s[~cat["masterCategory"].isin(cats).values] = -np.inf
+        idx, sc = serve.top_k(s, k, exclude)
+        hits = [(i, v) for i, v in zip(idx, sc) if np.isfinite(v)]
+        if not hits:
+            st.info("No products match the filters.")
+            return
+        cols = st.columns(5)
+        for n, (i, v) in enumerate(hits):
+            r = cat.iloc[i]
+            mark = "" if ref_type is None else (" ✅" if r["articleType"] == ref_type else "")
+            with cols[n % 5]:
+                st.image(r["image_file"], width="stretch")
+                st.markdown(f"<div class='card-title'>{r['productDisplayName']}</div>"
+                            f"<div class='card-sub'>{r['articleType']} · {r['baseColour']} · match {v:.2f}{mark}"
+                            f"</div>", unsafe_allow_html=True)
 
-# ------------------------------------------------------------------ 2. more like this
-elif page == PAGES[1]:
-    c1, c2 = st.columns([3, 1])
-    if c2.button("🎲 Random product", width="stretch"):
-        st.session_state.item = int(np.random.randint(len(cat)))
-    i = c1.selectbox("Pick a product", range(len(cat)), index=st.session_state.item,
-                     format_func=lambda j: f"{cat.at[j, 'productDisplayName']}  (#{cat.at[j, 'id']})")
-    q = cat.iloc[i]
-    a, b = st.columns([1, 4])
-    a.image(q["image_file"], width="stretch")
-    b.subheader(q["productDisplayName"])
-    b.write(f"{q['articleType']} · {q['baseColour']} · {q['gender']} · {q['usage']}")
-    st.divider()
-    idx, sc = recommend(method, serve.item_query(method, i), k, exclude=i)
-    if idx is not None:
-        st.markdown("**Recommended** (✅ = same article type as the query)")
-        show_grid(cat, idx, sc, ref_type=q["articleType"])
+    def upload(label, key):
+        up = st.file_uploader(label, type=["jpg", "jpeg", "png", "webp"], key=key)
+        if not up:
+            return None
+        try:
+            return Image.open(up).convert("RGB")
+        except Exception:
+            st.error("That file isn't a readable image. Please upload a JPG, PNG or WEBP photo.")
+            return None
 
-# ------------------------------------------------------------------ 3. text search
-elif page == PAGES[2]:
-    text = st.text_input("Describe what you're looking for", "black handbag for women")
-    if text.strip():
-        idx, sc = recommend(method, serve.encode_query(method, text=text), k)
-        if idx is not None:
-            show_grid(cat, idx, sc)
-
-# ------------------------------------------------------------------ 4. image search
-elif page == PAGES[3]:
-    up = st.file_uploader("Upload a product photo", type=["jpg", "jpeg", "png", "webp"], key="img_only")
-    img = open_upload(up) if up else None
-    if img is not None:
-        st.image(img, width=180)
-        idx, sc = recommend(method, serve.encode_query(method, image=img), k)
-        if idx is not None:
-            show_grid(cat, idx, sc)
-    elif not up:
-        st.info("Upload an image, e.g. a photo of a shoe, watch or t-shirt.")
-
-# ------------------------------------------------------------------ 5. image + text
-elif page == PAGES[4]:
-    st.write("Combine a reference photo with words (uses the fused image + text embedding).")
-    c1, c2 = st.columns([1, 2])
-    up2 = c1.file_uploader("Reference image", type=["jpg", "jpeg", "png", "webp"], key="img_combo")
-    mod = c2.text_input("Text", "red")
-    img2 = open_upload(up2) if up2 else None
-    if img2 is not None:
-        c1.image(img2, width=160)
-        idx, sc = recommend(method, serve.encode_query(method, image=img2, text=mod), k)
-        if idx is not None:
-            show_grid(cat, idx, sc)
+    if mode == "💬 Text":
+        text = st.text_input("What are you looking for?", "black handbag for women", key="q_text")
+        if text.strip():
+            results(serve.encode_query(PROPOSED, text=text))
+    elif mode == "📷 Photo":
+        img = upload("Upload a product photo", "q_img")
+        if img is not None:
+            st.image(img, width=160)
+            results(serve.encode_query(PROPOSED, image=img))
+        else:
+            st.info("Upload a photo of a shoe, watch, bag, t-shirt, ...")
+    elif mode == "🧩 Photo + text":
+        a, b = st.columns([1, 2])
+        with a:
+            img = upload("Reference photo", "q_combo")
+        text = b.text_input("Plus words, e.g. a colour", "red", key="q_combo_text")
+        if img is not None:
+            a.image(img, width=140)
+            results(serve.encode_query(PROPOSED, image=img, text=text))
+    else:
+        if "item" not in st.session_state:
+            st.session_state.item = int(np.random.default_rng(0).integers(len(cat)))
+        a, b = st.columns([3, 1])
+        if b.button("🎲 Random product", width="stretch"):
+            st.session_state.item = int(np.random.randint(len(cat)))
+        i = a.selectbox("Product", range(len(cat)), index=st.session_state.item,
+                        format_func=lambda j: cat.at[j, "productDisplayName"], key="q_item")
+        q = cat.iloc[i]
+        c1, c2 = st.columns([1, 5])
+        c1.image(q["image_file"], width="stretch")
+        c2.markdown(f"#### {q['productDisplayName']}\n{q['articleType']} · {q['baseColour']} · {q['gender']}")
+        st.markdown("**Recommended** (✅ = same product type)")
+        results(serve.item_query(PROPOSED, i), exclude=i, ref_type=q["articleType"])

@@ -1,4 +1,4 @@
-"""The Streamlit app with every exported from-scratch model, each in a fresh process."""
+"""The Streamlit app (results page + proposed-model demo), run headlessly in a fresh process."""
 import os
 import subprocess
 import sys
@@ -7,19 +7,22 @@ import pytest
 
 from src.scratch import serve
 
-METHODS = list(serve.export_info()["methods"]) if serve.available() else []
 
-
-def test_results_page_loads():
-    from streamlit.testing.v1 import AppTest
-    at = AppTest.from_file(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py"),
-                           default_timeout=300).run()
-    assert not at.exception, [e.value for e in at.exception]
-
-
-@pytest.mark.skipif(not METHODS, reason="no exported models (run the Colab notebook)")
-@pytest.mark.parametrize("method", METHODS)
-def test_app_every_section(method):
+@pytest.mark.skipif(not serve.available(), reason="no exported models (run the Colab/Kaggle notebook)")
+def test_app_pages_and_search_modes():
     smoke = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_smoke.py")
-    r = subprocess.run([sys.executable, smoke, method], capture_output=True, text=True, timeout=900)
+    r = subprocess.run([sys.executable, smoke], capture_output=True, text=True, timeout=900)
     assert r.returncode == 0 and "OK" in r.stdout, (r.stdout[-2000:], r.stderr[-3000:])
+
+
+@pytest.mark.skipif(not serve.available(), reason="no exported models")
+def test_proposed_model_answers_all_query_types():
+    from PIL import Image
+    img = Image.open(serve.catalog().iloc[0]["image_file"])
+    for q in (serve.encode_query("gated", text="red dress"), serve.encode_query("gated", image=img),
+              serve.encode_query("gated", image=img, text="red")):
+        idx, s = serve.top_k(serve.scores("gated", q), 10)
+        assert len(idx) == 10
+    # text search returns the right kind of product
+    idx, _ = serve.top_k(serve.scores("gated", serve.encode_query("gated", text="black handbag for women")), 10)
+    assert (serve.catalog().iloc[idx]["articleType"] == "Handbags").mean() >= 0.7

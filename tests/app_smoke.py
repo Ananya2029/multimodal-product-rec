@@ -1,8 +1,6 @@
-"""Drive the Streamlit app headlessly for ONE model: visit every section, use search and filters.
+"""Drive the Streamlit app headlessly: both pages, every search mode, filters.
 
-Run by tests/test_app.py in a fresh process per model (keeps memory low).
-
-    python tests/app_smoke.py gated
+    python tests/app_smoke.py
 """
 import os
 import sys
@@ -21,24 +19,27 @@ def check(at, where):
         sys.exit(1)
 
 
-def main(method: str):
+def main():
     at = AppTest.from_file(APP, default_timeout=300).run()
-    check(at, "start")
-    at.sidebar.selectbox[0].set_value(method).run()
-    check(at, "select model")
-    for page in at.radio(key="page").options:
-        print("->", page.encode("ascii", "ignore").decode().strip(), flush=True)
-        at.radio(key="page").set_value(page).run()
-        check(at, page)
-    at.radio(key="page").set_value(at.radio(key="page").options[2]).run()  # text search
-    at.text_input[0].set_value("blue jeans for men").run()
-    at.sidebar.multiselect[0].set_value(["Women"]).run()
+    check(at, "results page")
+    assert len(at.metric) >= 4, "results page should show the proposed model's headline metrics"
+    at.radio(key="page").set_value(at.radio(key="page").options[1]).run()
+    check(at, "demo page")
+    for mode in at.radio(key="mode").options:  # photo modes need an upload: they show the upload prompt
+        at.radio(key="mode").set_value(mode).run()
+        check(at, mode.encode("ascii", "ignore").decode())
+    at.radio(key="mode").set_value(at.radio(key="mode").options[0]).run()
+    at.text_input(key="q_text").set_value("blue jeans for men").run()
+    at.multiselect(key="f_gender").set_value(["Women"]).run()
     check(at, "text search + filter")
-    at.sidebar.multiselect[1].set_value(["Footwear"]).run()
-    at.sidebar.multiselect[0].set_value(["Women", "Men"]).run()
+    at.multiselect(key="f_cat").set_value(["Footwear"]).run()
+    at.multiselect(key="f_gender").set_value(["Women", "Men"]).run()
     check(at, "filters")
-    print("OK", method)
+    at.radio(key="mode").set_value(at.radio(key="mode").options[3]).run()
+    at.button[0].click().run()
+    check(at, "similar products + random")
+    print("OK")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main()
