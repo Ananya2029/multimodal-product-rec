@@ -2,6 +2,8 @@
 
     python -m src.scratch.data --source hf      # full 44k catalog from Hugging Face (run on Colab)
     python -m src.scratch.data --source local   # the 3k local catalog (quick local tests)
+    python -m src.scratch.data --source folder --path /kaggle/input/fashion-product-images-small
+                                                # same 44k catalog from files (no internet needed)
 
 Output (data/scratch/):
     images.npy      uint8 (N, S, S, 3) square-padded product photos (S = 64 by default)
@@ -73,17 +75,39 @@ def _rows_hf(limit=None):
         yield {c: ex.get(c) for c in META_COLS}, ex["image"]
 
 
+def _rows_folder(root, limit=None):
+    """The same catalog as files: styles.csv + images/<id>.jpg (e.g. the Kaggle dataset
+    'paramaggarwal/fashion-product-images-small', usable without internet access)."""
+    from pathlib import Path
+    root = Path(root)
+    styles = next(root.rglob("styles.csv"))
+    img_dir = next(p for p in root.rglob("images") if p.is_dir())
+    df = pd.read_csv(styles, on_bad_lines="skip")  # a few rows of the original CSV are malformed
+    df = df.dropna(subset=["productDisplayName"])
+    n = 0
+    for _, r in df.iterrows():
+        f = img_dir / f"{int(r['id'])}.jpg"
+        if not f.exists():
+            continue
+        yield {c: r.get(c) for c in META_COLS}, Image.open(f)
+        n += 1
+        if limit and n >= limit:
+            break
+
+
 def _rows_local(limit=None):
     df = pd.read_csv(CATALOG_CSV)
     for _, r in df.head(limit).iterrows() if limit else df.iterrows():
         yield {c: r[c] for c in META_COLS}, Image.open(IMAGE_DIR / r["image_path"])
 
 
-def prepare(source="hf", img_size=IMG_SIZE, limit=None, min_per_class=MIN_PER_CLASS, out=SCRATCH_DIR):
+def prepare(source="hf", img_size=IMG_SIZE, limit=None, min_per_class=MIN_PER_CLASS, out=SCRATCH_DIR, path=None):
     from tqdm import tqdm
     out.mkdir(parents=True, exist_ok=True)
     rows, images, originals = [], [], {}
-    for meta, im in tqdm(_rows_hf(limit) if source == "hf" else _rows_local(limit), desc="Reading products"):
+    rows_iter = {"hf": lambda: _rows_hf(limit), "local": lambda: _rows_local(limit),
+                 "folder": lambda: _rows_folder(path, limit)}[source]()
+    for meta, im in tqdm(rows_iter, desc="Reading products"):
         rows.append(meta)
         images.append(square(im, img_size))
         buf = io.BytesIO()
@@ -144,9 +168,10 @@ class ScratchData:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--source", choices=["hf", "local"], default="hf")
+    ap.add_argument("--source", choices=["hf", "local", "folder"], default="hf")
+    ap.add_argument("--path", default=None, help="dataset folder for --source folder")
     ap.add_argument("--img-size", type=int, default=IMG_SIZE)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--min-per-class", type=int, default=MIN_PER_CLASS)
     a = ap.parse_args()
-    prepare(a.source, a.img_size, a.limit, a.min_per_class)
+    prepare(a.source, a.img_size, a.limit, a.min_per_class, path=a.path)
