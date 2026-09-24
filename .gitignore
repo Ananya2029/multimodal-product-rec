@@ -9,8 +9,7 @@ venv/
 .ipynb_checkpoints/
 .DS_Store
 
-# smoke-test outputs (replaced by the Colab results; commit those once they exist)
-models/scratch/
-embeddings/scratch/
-results/scratch/
+# large per-run files of the from-scratch study (aggregated tables/figures are committed)
+results/scratch/runs/
 colab/mmrec_code.zip
+backup_smoke_test/

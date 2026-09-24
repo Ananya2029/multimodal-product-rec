@@ -47,7 +47,7 @@ def test_losses():
 def test_tiny_training_run_improves_over_chance():
     from src.scratch.data import SCRATCH_DIR, ScratchData
     from src.scratch.train import RunConfig, train_run
-    if not (SCRATCH_DIR / "meta.csv").exists():
+    if not (SCRATCH_DIR / "images.npy").exists():  # the Colab/Kaggle results zip ships no training arrays
         pytest.skip("run python -m src.scratch.data --source local first")
     data = ScratchData()
     _, res = train_run(RunConfig("text", "AdamW", 1e-3, epochs=2, batch=64), data, verbose=False)

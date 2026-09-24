@@ -1,0 +1,6 @@
+ablation,name,i2i mean,i2i_strict mean,text2item mean,image2item mean,i2i std,i2i_strict std,text2item std,image2item std,seeds,params (M),train min
+full,Gated fusion (full model),0.956,0.7651,0.5676,0.8308,0.0011,0.0015,0.0161,0.0082,3.0,3.8494,6.0003
+no_consistency,- missing-modality consistency,0.9573,0.7682,0.556,0.8246,0.001,0.0041,0.0184,0.0018,3.0,3.8494,5.9178
+no_itc,- image-text contrastive loss,0.9542,0.7438,0.4873,0.8039,0.0011,0.0022,0.0637,0.006,3.0,3.8494,5.966
+no_modality_dropout,- modality dropout,0.9601,0.7765,0.5684,0.8388,0.0004,0.0007,0.0106,0.0016,3.0,3.8494,5.9903
+no_supcon,- supervised contrastive loss,0.7857,0.4504,0.1991,0.6266,0.0075,0.0116,0.0289,0.007,3.0,3.8494,5.9959

@@ -1,0 +1,34 @@
+{
+  "tuned_lr": {
+    "SGD": 0.1,
+    "Adam": 0.003,
+    "AdamW": 0.003
+  },
+  "best_optimizer": "SGD",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "epochs": 30,
+  "n_products": 44013,
+  "n_test": 6602,
+  "winners": {
+    "i2i": {
+      "method": "gated",
+      "ndcg": 0.9559856166188799
+    },
+    "i2i_strict": {
+      "method": "text",
+      "ndcg": 0.7794079059465623
+    },
+    "text2item": {
+      "method": "late",
+      "ndcg": 0.6799352520187164
+    },
+    "image2item": {
+      "method": "xattn",
+      "ndcg": 0.8329094763059631
+    }
+  }
+}

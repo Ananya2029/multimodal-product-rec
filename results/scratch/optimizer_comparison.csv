@@ -1,0 +1,4 @@
+optimizer,lr,i2i mean,i2i_strict mean,text2item mean,image2item mean,i2i std,i2i_strict std,text2item std,image2item std,seeds,params (M),train min
+Adam,0.003,0.9558,0.7525,0.5633,0.8227,0.0013,0.0039,0.0137,0.0021,3.0,3.8494,6.0081
+AdamW,0.003,0.9567,0.7573,0.5851,0.8213,0.0007,0.0061,0.0096,0.0059,3.0,3.8494,6.015
+SGD,0.1,0.956,0.7651,0.5676,0.8308,0.0011,0.0015,0.0161,0.0082,3.0,3.8494,6.0003

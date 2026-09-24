@@ -1,0 +1,36 @@
+{
+  "optimizer": "SGD",
+  "lr": 0.1,
+  "methods": {
+    "image": {
+      "run": "image_SGD_lr0.1_s0",
+      "name": "Image-only CNN",
+      "checkpoint": "image_SGD_lr0.1_s0.pt"
+    },
+    "text": {
+      "run": "text_SGD_lr0.1_s0",
+      "name": "Text-only Transformer",
+      "checkpoint": "text_SGD_lr0.1_s0.pt"
+    },
+    "early": {
+      "run": "early_SGD_lr0.1_s0",
+      "name": "Early fusion (concat)",
+      "checkpoint": "early_SGD_lr0.1_s0.pt"
+    },
+    "late": {
+      "run": "late_SGD_lr0.1_s0",
+      "name": "Late fusion (score sum)",
+      "checkpoint": "late_SGD_lr0.1_s0.pt"
+    },
+    "gated": {
+      "run": "gated_SGD_lr0.1_s0",
+      "name": "Gated fusion (proposed)",
+      "checkpoint": "gated_SGD_lr0.1_s0.pt"
+    },
+    "xattn": {
+      "run": "xattn_SGD_lr0.1_s0",
+      "name": "Cross-attention fusion (proposed)",
+      "checkpoint": "xattn_SGD_lr0.1_s0.pt"
+    }
+  }
+}
