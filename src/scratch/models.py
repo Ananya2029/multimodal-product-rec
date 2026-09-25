@@ -138,15 +138,17 @@ class MultimodalRec(nn.Module):
         r = torch.rand(b, device=device)
         return r < p / 2, (r >= p / 2) & (r < p)   # (drop_img, drop_txt)
 
-    def encode(self, images=None, tokens=None, drop_p: float = 0.0, consistency: bool = False) -> dict:
+    def encode(self, images=None, tokens=None, drop_p: float = 0.0, consistency: bool = False,
+               img_out=None) -> dict:
         """images: (B,3,64,64) float or None; tokens: (B,L) long or None. Returns f, z_img, z_txt, gate.
-        consistency=True also returns f_full / f_img_only / f_txt_only for the consistency loss."""
-        b = (images if images is not None else tokens).shape[0]
-        dev = (images if images is not None else tokens).device
+        consistency=True also returns f_full / f_img_only / f_txt_only for the consistency loss.
+        img_out: precomputed self.img(images) output, to re-use image features across many titles."""
+        ref = images if images is not None else (img_out[0] if img_out is not None else tokens)
+        b, dev = ref.shape[0], ref.device
         out = {"z_img": None, "z_txt": None, "gate": None}
         h_i = tok_i = h_t = tok_t = pad_t = None
-        if self.use_img and images is not None:
-            h_i, tok_i = self.img(images)
+        if self.use_img and (images is not None or img_out is not None):
+            h_i, tok_i = img_out if img_out is not None else self.img(images)
             out["z_img"] = F.normalize(self.proj_i(h_i), dim=-1)
         if self.use_txt and tokens is not None:
             h_t, tok_t, pad_t = self.txt(tokens)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import os
 import json
 import re
 from collections import Counter
@@ -27,7 +28,9 @@ from sklearn.model_selection import train_test_split
 
 from ..config import CATALOG_CSV, DATA_DIR, DATASET_NAME, IMAGE_DIR, SEED
 
-SCRATCH_DIR = DATA_DIR / "scratch"
+from pathlib import Path
+
+SCRATCH_DIR = Path(os.environ.get("MRS_SCRATCH_DIR", DATA_DIR / "scratch"))  # override for tests
 IMG_SIZE = 64
 MAX_LEN = 16
 MIN_PER_CLASS = 20   # article types with fewer products are dropped (too few to split and evaluate)

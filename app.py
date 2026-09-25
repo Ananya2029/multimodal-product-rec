@@ -164,6 +164,33 @@ digraph {
     st.caption("Removing the supervised contrastive loss costs the most; removing the image–text contrastive loss "
                "hurts search by text and photo. Modality dropout and the consistency loss did not help here.")
 
+    # ---- robustness to damaged titles
+    rob = read_csv("robustness_summary.csv")
+    if rob is not None:
+        st.subheader("Robustness: what if product titles are missing or wrong?")
+        st.markdown("Real catalogs have short, missing or wrong titles. We damaged the titles of the unseen test "
+                    "products (photos untouched) and re-scored each model: **similar products (same type)**, NDCG@10, "
+                    "mean of 3 random draws.")
+        conds = ["clean", "drop 30%", "drop 60%", "no title", "wrong 20%", "wrong 50%"]
+        labels = {"clean": "Clean titles", "drop 30%": "30% of words removed", "drop 60%": "60% removed",
+                  "no title": "No title", "wrong 20%": "20% wrong titles", "wrong 50%": "50% wrong titles"}
+        piv = rob.pivot(index="model", columns="condition", values="i2i mean").reindex(columns=conds)
+        piv = piv.reindex([m for m in ["image", "text", "early", "late", "gated", "xattn"] if m in piv.index])
+        rt = pd.DataFrame({"Model": [METHOD_NAMES[m] for m in piv.index]})
+        for c in conds:
+            rt[labels[c]] = [f"{v:.3f}" for v in piv[c]]
+        st.dataframe(rt.style.apply(highlight, axis=1), width="stretch", hide_index=True)
+        gt, tt, it = piv.loc["gated"], piv.loc["text"], piv.loc["image"]
+        st.markdown(f"""
+- **Fusion keeps working when text fails:** with no titles, the text-only model collapses to {tt['no title']:.3f},
+  while gated fusion keeps **{gt['no title']:.3f}**, because the image branch carries the recommendation.
+- **Open problem:** with damaged titles, the fused models fall below the image-only model
+  ({gt['drop 60%']:.3f} vs {it['drop 60%']:.3f} at 60% words removed). They trust unreliable text too much, which
+  motivates our next step: noise-aware training.
+""")
+        if (RES / "robustness.png").exists():
+            st.image(str(RES / "robustness.png"), width="stretch")
+
     # ---- GAN
     gan_json = RESULTS_DIR / "gan_metrics.json"
     if gan_json.exists():

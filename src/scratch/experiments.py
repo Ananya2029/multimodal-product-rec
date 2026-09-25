@@ -9,6 +9,11 @@ Stages
   5 report      tables (mean +- std over seeds), paired bootstrap significance tests, figures,
                 and the export used by the Streamlit app
 
+Extension (modality balancing, run after the main study):
+  balance         gated model + OGM gradient modulation (alpha tuned on validation) / uni-modal supervision /
+                  noise-aware training / noise-aware + uni-modal, x seeds, with the main study's optimizer
+  report_balance  table + significance vs the plain gated model (works locally from results/scratch/runs)
+
     python -m src.scratch.experiments                   # everything (defaults below)
     python -m src.scratch.experiments --smoke           # tiny end-to-end check (CPU, minutes)
     python -m src.scratch.experiments --out /content/drive/MyDrive/mmrec   # save to Google Drive
@@ -268,6 +273,113 @@ class Study:
         print(f"exported {len(exp['methods'])} models for the app")
 
 
+BALANCE_NAMES = {"base": "Gated fusion (no balancing)", "ogm": "+ gradient modulation (OGM)",
+                 "uni": "+ uni-modal supervision", "noise": "+ noise-aware training",
+                 "noise_uni": "+ noise-aware training + uni-modal supervision"}
+OGM_ALPHAS = [0.3, 1.0]
+
+
+def split_fingerprint(meta: pd.DataFrame) -> str:
+    """Hash of the test product ids: the extension must use exactly the main study's split."""
+    import hashlib
+    ids = ",".join(map(str, sorted(meta.loc[meta["split"] == "test", "id"])))
+    return hashlib.md5(ids.encode()).hexdigest()
+
+
+def run_balance(st: "Study", opt: str, lr: float):
+    """Modality-balancing variants of the proposed gated model; OGM's alpha is chosen on validation."""
+    base = RunConfig(PROPOSED, opt, lr, seed=st.seeds[0], epochs=st.epochs)
+    scores = {}
+    for a in OGM_ALPHAS:
+        r = st.run(replace(base, balance="ogm", ogm_alpha=a, name=f"bal_ogm_a{a:g}_s{st.seeds[0]}"), save_ckpt=True)
+        scores[a] = r["val"]["i2i"] + r["val"]["i2i_strict"]
+    alpha = max(scores, key=scores.get)
+    (st.res_dir / "balance_alpha.json").write_text(json.dumps(
+        {"scores": scores, "alpha": alpha, "test_split_fingerprint": split_fingerprint(st.data.meta)}))
+    print(f"OGM alpha (validation): {scores} -> {alpha}", flush=True)
+    for s in st.seeds:
+        b = replace(base, seed=s)
+        st.run(replace(b, balance="ogm", ogm_alpha=alpha, name=f"bal_ogm_a{alpha:g}_s{s}"), save_ckpt=s == st.seeds[0])
+        st.run(replace(b, lambda_uni=0.5, name=f"bal_uni_s{s}"), save_ckpt=s == st.seeds[0])
+        st.run(replace(b, title_noise=0.5, name=f"bal_noise_s{s}"), save_ckpt=s == st.seeds[0])
+        st.run(replace(b, title_noise=0.5, lambda_uni=0.5, name=f"bal_noise_uni_s{s}"), save_ckpt=s == st.seeds[0])
+
+
+def report_balance(root: Path, opt="SGD", lr=0.1, seeds=(0, 1, 2)):
+    """Compare the balancing variants with the plain gated model. Needs only results/scratch/runs."""
+    res_dir = root / "results" / "scratch"
+    runs = res_dir / "runs"
+    info = json.loads((res_dir / "balance_alpha.json").read_text())
+    alpha = info["alpha"]
+    meta_f = SCRATCH_DIR / "meta.csv"
+    if "test_split_fingerprint" in info and meta_f.exists():
+        same = split_fingerprint(pd.read_csv(meta_f)) == info["test_split_fingerprint"]
+        print("test split identical to the main study:", same)
+        if not same:
+            raise SystemExit("The extension used a different test split; results are not comparable.")
+    names = {"base": [f"{PROPOSED}_{opt}_lr{lr:g}_s{s}" for s in seeds],
+             "ogm": [f"bal_ogm_a{alpha:g}_s{s}" for s in seeds],
+             "uni": [f"bal_uni_s{s}" for s in seeds],
+             "noise": [f"bal_noise_s{s}" for s in seeds],
+             "noise_uni": [f"bal_noise_uni_s{s}" for s in seeds]}
+    rows, sig = [], []
+    perq = {}
+    for v, rs in names.items():
+        found = [r for r in rs if (runs / f"{r}.json").exists()]
+        if not found:
+            continue
+        tests = [json.loads((runs / f"{r}.json").read_text())["test"] for r in found]
+        row = {"variant": v, "name": BALANCE_NAMES[v] + (f" (alpha={alpha:g})" if "ogm" in v else ""),
+               "seeds": len(found)}
+        for k in METRICS:
+            vals = [t.get(k, np.nan) for t in tests]
+            row[f"{k} mean"], row[f"{k} std"] = float(np.nanmean(vals)), float(np.nanstd(vals, ddof=1))
+        rows.append(row)
+        perq[v] = {k: np.mean([np.load(runs / f"{r}_perq.npz")[k] for r in found], axis=0) for k in METRICS}
+    for v in perq:
+        if v == "base" or "base" not in perq:
+            continue
+        for k in METRICS:
+            a, b = perq[v][k], perq["base"][k]
+            sig.append({"variant": v, "metric": k, "variant_ndcg": a.mean(), "base_ndcg": b.mean(),
+                        "diff": a.mean() - b.mean(), "p_value": paired_bootstrap_p(a, b)})
+    tab, sig = pd.DataFrame(rows), pd.DataFrame(sig)
+    tab.round(4).to_csv(res_dir / "balance_comparison.csv", index=False)
+    sig.round(5).to_csv(res_dir / "balance_significance.csv", index=False)
+    # how strongly text dominated during training, and how OGM reacted (first seed)
+    f = runs / f"bal_ogm_a{alpha:g}_s{seeds[0]}.json"
+    if f.exists():
+        h = pd.DataFrame(json.loads(f.read_text())["history"])
+        if "ogm_ratio" in h:
+            fig, ax = plt.subplots(figsize=(7, 3.8))
+            ax.plot(h["epoch"], h["ogm_ratio"], lw=2, label="text / image strength")
+            ax.plot(h["epoch"], h["ogm_k_txt"], lw=2, label="gradient scale on text encoder")
+            ax.axhline(1, ls="--", color="grey", lw=1)
+            ax.set_xlabel("epoch")
+            ax.set_title("Modality imbalance during training (gated + OGM)")
+            ax.grid(alpha=0.3)
+            ax.legend()
+            fig.tight_layout()
+            fig.savefig(res_dir / "balance_ogm_ratio.png", dpi=140)
+            plt.close(fig)
+    print(tab[["name"] + [f"{k} mean" for k in METRICS]].round(4).to_string(index=False))
+    print(sig.round(4).to_string(index=False))
+    return tab, sig
+
+
+def bundle_balance(out: Path, zip_path: Path):
+    """Zip only the extension's runs and checkpoints (unzip into the project, next to the main results)."""
+    import zipfile
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted((out / "results" / "scratch" / "runs").glob("bal_*")):
+            z.write(f, f"results/scratch/runs/{f.name}")
+        for f in sorted((out / "results" / "scratch").glob("balance_*")):
+            z.write(f, f"results/scratch/{f.name}")
+        for f in sorted((out / "models" / "scratch").glob("bal_*.pt")):
+            z.write(f, f"models/scratch/{f.name}")
+    print(f"balance bundle -> {zip_path}")
+
+
 def bundle(out: Path, zip_path: Path):
     """Zip everything the local app needs (no large training arrays)."""
     stage = zip_path.with_suffix("")
@@ -295,13 +407,28 @@ def main():
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--smoke", action="store_true", help="tiny settings for a quick end-to-end check")
     ap.add_argument("--bundle", default=None, help="write a zip for the local app to this path")
+    ap.add_argument("--bundle-balance", default=None, help="zip only the balancing extension to this path")
+    ap.add_argument("--base-opt", default="SGD", help="optimizer of the main study (for the balance stage)")
+    ap.add_argument("--base-lr", type=float, default=0.1)
     a = ap.parse_args()
+    if a.stages == ["report_balance"]:  # local, no training data needed
+        report_balance(Path(a.out), a.base_opt, a.base_lr, tuple(a.seeds))
+        return
     device = "cuda" if torch.cuda.is_available() else "cpu"
     if a.smoke:
         a.epochs, a.tune_epochs, a.seeds, a.batch = 1, 1, [0, 1], 32
         for k in LR_GRID:
             LR_GRID[k] = LR_GRID[k][1:2]
     st = Study(Path(a.out), a.epochs, a.tune_epochs, a.seeds, device, a.smoke, a.batch)
+    if "balance" in a.stages:
+        run_balance(st, a.base_opt, a.base_lr)
+    if "report_balance" in a.stages:
+        report_balance(Path(a.out), a.base_opt, a.base_lr, tuple(a.seeds))
+    if a.bundle_balance:
+        bundle_balance(Path(a.out), Path(a.bundle_balance))
+    main_stages = {"tune", "optimizers", "methods", "ablations", "report", "export"}
+    if not main_stages & set(a.stages):
+        return
     lrs_file, opt_file = st.res_dir / "tuned_lr.json", st.res_dir / "best_optimizer.json"
     lrs = st.tune() if "tune" in a.stages else json.loads(lrs_file.read_text())
     best_opt = st.optimizers(lrs) if "optimizers" in a.stages else json.loads(opt_file.read_text())["optimizer"]

@@ -8,6 +8,17 @@ Loss = lambda_sup * [SupCon(f, type) + 0.5 * SupCon(f, type+colour)] + lambda_it
     consistency  missing-modality consistency (fused methods): the fused embedding computed from only the
             image or only the title is pulled towards the full image+title embedding (sg = stop-gradient)
 
+Modality balancing (extension; off by default, so earlier results are unchanged):
+    balance="ogm"   on-the-fly gradient modulation (after Peng et al., CVPR 2022), adapted to contrastive
+            retrieval: each step, each modality's strength is exp(-SupCon(z_m)); the gradients of the
+            dominant modality's encoder are scaled by k = 1 - tanh(alpha * (ratio - 1)).
+    lambda_uni > 0  uni-modal supervision: SupCon on z_img and on z_txt separately, so neither encoder can
+            lean on the other ("modality laziness", Du et al., ICML 2023)
+    title_noise > 0 noise-aware training (proposed): that share of titles in each batch is damaged (words
+            removed at a random 30-100% rate, or swapped with another product's title) on the FUSION input,
+            while labels stay true, so the gate learns to rely on the photo when the text is unreliable.
+            The image-text contrastive loss still uses the clean title.
+
 Test metrics (on products never seen in training), NDCG@10:
     i2i         "more like this": relevant = same article type
     i2i_strict  relevant = same article type AND colour
@@ -49,6 +60,10 @@ class RunConfig:
     modality_dropout: float = 0.3
     temperature: float = 0.1
     warmup_epochs: int = 1
+    balance: str = ""          # "" or "ogm"
+    ogm_alpha: float = 0.5
+    lambda_uni: float = 0.0
+    title_noise: float = 0.0
     name: str = ""
 
     def run_name(self):
@@ -72,6 +87,16 @@ def info_nce(zi, zt, logit_scale):
     logits = logit_scale.exp().clamp(max=100) * zi @ zt.T
     target = torch.arange(len(zi), device=zi.device)
     return 0.5 * (F.cross_entropy(logits, target) + F.cross_entropy(logits.T, target))
+
+
+def corrupt_tokens(t: torch.Tensor, p: float) -> torch.Tensor:
+    """Damage a share p of titles: half get words removed (30-100%), half get another item's title."""
+    b = len(t)
+    r = torch.rand(b, device=t.device)
+    drop, swap = r < p / 2, (r >= p / 2) & (r < p)
+    rate = torch.rand(b, 1, device=t.device) * 0.7 + 0.3
+    t = t.masked_fill((torch.rand(t.shape, device=t.device) < rate) & drop[:, None], 0)
+    return torch.where(swap[:, None], t[torch.randperm(b, device=t.device)], t)
 
 
 # ------------------------------------------------------------------ batches
@@ -171,14 +196,19 @@ def train_run(cfg: RunConfig, data: ScratchData, device="cpu", data_t=None, verb
     history, best, best_state, t0 = [], -1.0, None, time.perf_counter()
     for epoch in range(1, cfg.epochs + 1):
         model.train()
+        ogm_log = []
         perm = torch.from_numpy(np.random.permutation(tr)).to(device)
         losses = []
         for b in range(steps_per_epoch):
             j = perm[b * cfg.batch:(b + 1) * cfg.batch]
             x = to_input(data_t["images"][j], True) if model.use_img else None
             t = data_t["tokens"][j] if model.use_txt else None
+            noisy = cfg.title_noise > 0 and t is not None and model.use_img
             with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_amp):
-                out = model.encode(x, t, drop_p=cfg.modality_dropout, consistency=cfg.lambda_cons > 0)
+                out = model.encode(x, corrupt_tokens(t, cfg.title_noise) if noisy else t,
+                                   drop_p=cfg.modality_dropout, consistency=cfg.lambda_cons > 0)
+                if noisy:  # image-text alignment and uni-modal terms use the clean title
+                    out["z_txt"] = model.encode(None, t)["z_txt"]
             f = out["f"].float()
             loss = cfg.lambda_sup * (supcon(f, y_type[j], cfg.temperature)
                                      + 0.5 * supcon(f, y_fine[j], cfg.temperature))
@@ -189,9 +219,26 @@ def train_run(cfg: RunConfig, data: ScratchData, device="cpu", data_t=None, verb
                 cons = ((1 - (out["f_img_only"].float() * target).sum(-1))
                         + (1 - (out["f_txt_only"].float() * target).sum(-1))).mean()
                 loss = loss + cfg.lambda_cons * cons
+            both = out["z_img"] is not None and out["z_txt"] is not None
+            if cfg.lambda_uni > 0 and both:  # uni-modal supervision
+                loss = loss + cfg.lambda_uni * (supcon(out["z_img"].float(), y_type[j], cfg.temperature)
+                                                + supcon(out["z_txt"].float(), y_type[j], cfg.temperature))
             opt.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.unscale_(opt)
+            if cfg.balance == "ogm" and both:  # on-the-fly gradient modulation
+                with torch.no_grad():
+                    s_img = torch.exp(-supcon(out["z_img"].float(), y_type[j], cfg.temperature))
+                    s_txt = torch.exp(-supcon(out["z_txt"].float(), y_type[j], cfg.temperature))
+                    ratio = (s_txt / s_img.clamp(min=1e-8)).item()
+                k_txt = 1 - np.tanh(cfg.ogm_alpha * (ratio - 1)) if ratio > 1 else 1.0
+                k_img = 1 - np.tanh(cfg.ogm_alpha * (1 / ratio - 1)) if ratio < 1 else 1.0
+                for enc, k in ((model.txt, k_txt), (model.img, k_img)):
+                    if k < 1:
+                        for prm in enc.parameters():
+                            if prm.grad is not None:
+                                prm.grad.mul_(k)
+                ogm_log.append((ratio, k_txt, k_img))
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             scaler.step(opt)
             scaler.update()
@@ -200,6 +247,10 @@ def train_run(cfg: RunConfig, data: ScratchData, device="cpu", data_t=None, verb
         val = evaluate(model, data, data_t, "val", full=False)["i2i"]
         history.append({"epoch": epoch, "train_loss": float(np.mean(losses)), "val_i2i": float(val),
                         "lr": opt.param_groups[0]["lr"], "time_s": time.perf_counter() - t0})
+        if ogm_log:  # text/image strength ratio and the gradient scales applied (for the paper's analysis)
+            r = np.array(ogm_log)
+            history[-1].update({"ogm_ratio": float(r[:, 0].mean()), "ogm_k_txt": float(r[:, 1].mean()),
+                                "ogm_k_img": float(r[:, 2].mean())})
         if val > best:  # early stopping: keep the best epoch on validation
             best, best_state = val, {k: v.detach().clone() for k, v in model.state_dict().items()}
         if verbose:
