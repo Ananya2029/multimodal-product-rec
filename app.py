@@ -31,18 +31,6 @@ div[data-testid="stMetric"] {background: rgba(46,139,87,0.08); border-radius: 10
 </style>""", unsafe_allow_html=True)
 
 
-@st.cache_data(show_spinner="Downloading image ...", max_entries=20, ttl=3600)
-def fetch_url_image(url: str) -> Image.Image:
-    from src.web import fetch_image  # http(s) only, no private/local addresses, 10 MB cap
-    return fetch_image(url)
-
-
-@st.cache_resource
-def live_shop():
-    from src.scratch import live
-    return live.load()
-
-
 def read_csv(name):
     f = RES / name
     return pd.read_csv(f) if f.exists() else None
@@ -108,7 +96,7 @@ digraph {
 }""")
 
     # ------------------------------------------------------------ what we achieved
-    st.header("Results & Findings")
+    st.header("What we achieved")
     g, img = meth.loc[PROPOSED], meth.loc["image"]
     cols = st.columns(4)
     for col, (k, label) in zip(cols, METRICS.items()):
@@ -198,8 +186,8 @@ digraph {
 else:
     st.markdown(f"**Model: Gated fusion (proposed)** · catalog of **{len(cat):,} products it never saw in "
                 "training**")
-    mode = st.radio("Search by", ["💬 Text", "📷 Photo", "🧩 Photo + text", "🧥 Similar to a product",
-                                  "🔗 Photo from the web", "🛒 Live online shop"], horizontal=True, key="mode")
+    mode = st.radio("Search by", ["💬 Text", "📷 Photo", "🧩 Photo + text", "🧥 Similar to a product"],
+                    horizontal=True, key="mode")
     k = st.slider("Number of results", 5, 20, 10, 5, key="k")
 
     def results(q, exclude=None, ref_type=None):
@@ -247,7 +235,7 @@ else:
         if img is not None:
             a.image(img, width=140)
             results(serve.encode_query(PROPOSED, image=img, text=text))
-    elif mode == "🧥 Similar to a product":
+    else:
         # the button writes the dropdown's own state *before* the dropdown is drawn (a keyed widget ignores
         # later changes to its `index` argument, which is why the button previously had no effect)
         if "q_item" not in st.session_state:
@@ -266,61 +254,3 @@ else:
         c2.markdown(f"#### {q['productDisplayName']}\n{q['articleType']} · {q['baseColour']} · {q['gender']}")
         st.markdown("**Recommended** (✅ = same product type)")
         results(serve.item_query(PROPOSED, i), exclude=i, ref_type=q["articleType"])
-
-    # ------------------------------------------------------------ internet: photo from a web link
-    elif mode == "🔗 Photo from the web":
-        st.caption("Paste a direct link to a product photo from any website (ends in .jpg, .png or .webp). "
-                   "**Add a few words** (colour + product type): photos from other shops look different from our "
-                   "training photos, and the words let the multimodal model recognise the product reliably.")
-        a, b = st.columns([3, 2])
-        url = a.text_input("Image link", "", key="q_url", placeholder="https://.../product.jpg")
-        url_text = b.text_input("Describe it in a few words (recommended)", "", key="q_url_text",
-                                placeholder="e.g. blue handbag, black sunglasses")
-        if url.strip():
-            try:
-                web_img = fetch_url_image(url.strip())
-            except Exception as e:  # unreachable, not an image, private address, too large ...
-                web_img = None
-                st.error(str(e))
-            if web_img is not None:
-                st.image(web_img, width=160)
-                results(serve.encode_query(PROPOSED, image=web_img, text=url_text))
-
-    # ------------------------------------------------------------ internet: live online shop
-    else:
-        from src.scratch import live
-        st.caption("Real products fetched from the public shop API **dummyjson.com**, embedded with our model "
-                   "(fashion categories only, since the model was trained on fashion).")
-        shop = live_shop()
-        if st.button("🔄 Fetch products from the internet" if shop is None else "🔄 Refresh from the internet",
-                     key="live_fetch"):
-            bar = st.progress(0.0, "Contacting dummyjson.com ...")
-            try:
-                live.build(PROPOSED, progress=lambda f, m: bar.progress(min(f, 1.0), m))
-                live_shop.clear()
-                st.rerun()
-            except Exception as e:
-                st.error(f"Couldn't reach the online shop ({e.__class__.__name__}). Check the internet connection.")
-        if shop is not None:
-            prods, F = shop["products"], shop["F"]
-            st.caption(f"{len(prods)} products · fetched {shop['fetched_at']}")
-            q_live = st.text_input("Search the online shop", "", key="q_live", placeholder="e.g. black handbag")
-            if q_live.strip():
-                s_live = F @ serve.encode_query(PROPOSED, text=q_live)
-                cols = st.columns(5)
-                for n, i in enumerate(np.argsort(-s_live)[:k]):
-                    p = prods[i]
-                    with cols[n % 5]:
-                        st.image(str(live.image_path(p)), width="stretch")
-                        st.markdown(f"<div class='card-title'>{p['title']}</div><div class='card-sub'>"
-                                    f"{p['category']} · ${p['price']} · match {s_live[i]:.2f}</div>",
-                                    unsafe_allow_html=True)
-            st.markdown("##### Find similar products in our catalog")
-            default = next((i for i, p in enumerate(prods) if p["category"] == "mens-shirts"), 0)
-            j = st.selectbox("Online product", range(len(prods)), index=default, key="q_live_item",
-                             format_func=lambda i: f"{prods[i]['title']} ({prods[i]['category']})")
-            c1, c2 = st.columns([1, 5])
-            c1.image(str(live.image_path(prods[j])), width="stretch")
-            c2.markdown(f"#### {prods[j]['title']}\n{prods[j]['category']} · ${prods[j]['price']}")
-            st.markdown("**Similar products in our catalog**")
-            results(F[j])

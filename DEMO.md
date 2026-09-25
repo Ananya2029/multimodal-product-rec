@@ -28,18 +28,6 @@ The app has two pages: **📊 Results** and **🛍️ Try the proposed model**.
 | 8 | 💬 Text | `black handbag for women`, `blue jeans for men` | "Search by words." |
 | 9 | 📷 Photo | Upload the prepared photo | "Search by photo." |
 | 10 | 🧩 Photo + text | Watch photo `30039.jpg` + `white watch` | "Both together in one query: same kind of product, new colour." |
-| 11 | 🔗 Photo from the web | Paste a link below + words, e.g. `blue handbag` | "It works with photos from any website. The words help the model recognise unfamiliar photos: that's the benefit of multimodal." |
-| 12 | 🛒 Live online shop | 🔄 Fetch, search `black handbag`, pick a shirt | "Real products live from an online shop API, matched to our catalog by our model." |
-
-## Internet test links (paste in 🔗 Photo from the web, together with the words)
-| Link | Words | Result |
-|---|---|---|
-| `https://cdn.dummyjson.com/product-images/womens-bags/blue-women's-handbag/thumbnail.webp` | `blue handbag` | 10/10 blue handbags |
-| `https://cdn.dummyjson.com/product-images/sunglasses/black-sun-glasses/thumbnail.webp` | `black sunglasses` | 10/10 black sunglasses |
-| `https://cdn.dummyjson.com/product-images/mens-shirts/blue-&-black-check-shirt/thumbnail.webp` | `blue check shirt` | 10/10 blue shirts |
-| `https://cdn.dummyjson.com/product-images/mens-watches/brown-leather-belt-watch/thumbnail.webp` | `brown watch` | 10/10 watches |
-
-**Honest note:** a web photo *without* words works for watches (9/10) but often not for other items: shop photos look different from our training photos, which is typical for a model trained from scratch. Adding words fixes it, and that's the advantage of the multimodal model.
 
 ## Results (test NDCG@10, 6,602 unseen products, mean of 3 seeds)
 | Method | More like this (type) | Type + colour | Text query | Photo query |
