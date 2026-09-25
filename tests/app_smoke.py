@@ -41,6 +41,23 @@ def main():
     if len(seen) < 2:
         print("FAIL [random product]: the selected product did not change")
         sys.exit(1)
+
+    # internet: photo from a web link (a blocked private address must show an error, not crash)
+    at.radio(key="mode").set_value("🔗 Photo from the web").run()
+    at.text_input(key="q_url").set_value("http://127.0.0.1/secret.png").run()
+    check(at, "blocked web link")
+    if not any("not allowed" in e.value for e in at.error):
+        print("FAIL [blocked web link]: no error shown")
+        sys.exit(1)
+    from src.scratch import live
+    shop = live.load()
+    if shop is not None:  # a real product photo from the internet
+        at.text_input(key="q_url").set_value(shop["products"][0]["thumbnail"]).run()
+        check(at, "real web link")
+        # internet: live online shop
+        at.radio(key="mode").set_value("🛒 Live online shop").run()
+        at.text_input(key="q_live").set_value("black handbag").run()
+        check(at, "live shop search")
     print("OK")
 
 
