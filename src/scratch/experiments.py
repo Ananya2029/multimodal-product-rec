@@ -35,7 +35,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from ..config import ROOT
-from ..evaluate import bootstrap_ci, paired_bootstrap_p
+from ..metrics import bootstrap_ci, paired_bootstrap_p
 from .data import SCRATCH_DIR, ScratchData
 from .models import METHOD_NAMES, METHODS
 from .train import RunConfig, embed, train_run

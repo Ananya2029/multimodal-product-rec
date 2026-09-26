@@ -35,7 +35,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 
-from ..evaluate import build_text_queries, ranking_metrics, topk_from_scores
+from ..metrics import build_text_queries, ranking_metrics, topk_from_scores
 from .data import ScratchData
 from .models import MultimodalRec, count_params
 

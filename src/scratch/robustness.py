@@ -29,7 +29,7 @@ from PIL import Image
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from ..evaluate import build_text_queries, ranking_metrics, topk_from_scores
+from ..metrics import build_text_queries, ranking_metrics, topk_from_scores
 from . import serve
 from .data import SCRATCH_DIR, encode, square, tokenize
 from .models import METHOD_NAMES, MultimodalRec
