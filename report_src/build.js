@@ -219,8 +219,8 @@ const authors = new Table({
   width: { size: FULL, type: WidthType.DXA }, columnWidths: [FULL / 2, FULL / 2],
   borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, insideHorizontal: noBorder, insideVertical: noBorder },
   rows: [new TableRow({ children: [
-    authorBlock(["[Student Name]", "Dept. of [Department]", "[College / University Name]", "[City], India", "[email address]"]),
-    authorBlock(["[Guide Name]", "Dept. of [Department]", "[College / University Name]", "[City], India", "[email address]"]),
+    authorBlock(["Ananya", "School of Computer Applications", "Dayananda Sagar University", "Bengaluru, India", "SCA25MSD011@dsu.edu.in"]),
+    authorBlock(["Ms. Priyanka Rukesh", "School of Computer Applications", "Dayananda Sagar University", "Bengaluru, India"]),
   ] })],
 });
 
@@ -350,7 +350,9 @@ col2.push(P(`To test catalogs with poor titles, we damage the titles of the test
 col2.push(...FIG(path.join(ROOT, "results/scratch/robustness.png"), 3.45, 4, "Similar-product NDCG@10 when title words are removed (left) or titles are wrong (right)."));
 
 col2.push(H2("F", "Demonstration System and Product Generation"));
-col2.push(P(`The final model is deployed in a Streamlit web application that answers similar-product, text, photo and photo + text queries on the ${nTest.toLocaleString("en-US")} unseen products in real time on a laptop CPU, since the model has only 3.8 M parameters. As a complementary experiment, a conditional DCGAN [30] trained from scratch with DiffAugment [31] generates new 64×64 product images per category; after fixing an initial mode collapse, its Fréchet distance in CLIP feature space improved from ${D.gan["FD-CLIP untrained generator (baseline)"].toFixed(2)} (untrained generator) to ${D.gan["FD-CLIP (generated vs real)"].toFixed(2)}, and ${Math.round(100 * D.gan["class accuracy (generated)"])}% of generated images are recognised as the requested category (chance ${Math.round(100 * D.gan["chance accuracy"])}%). Image quality remains limited by the small CPU training budget.`));
+col2.push(P(`The final model is deployed in a Streamlit web application that answers similar-product, text, photo and photo + text queries on the ${nTest.toLocaleString("en-US")} unseen products in real time on a laptop CPU, since the model has only 3.8 M parameters. Fig. 5 shows typical results: a text query returns black handbags, a photo of a black watch returns other black watches, adding the words “white watch” to the same photo keeps the product type but changes the colour, and a purple T-shirt retrieves other purple T-shirts.`));
+col2.push(...FIG(path.join(__dirname, "qualitative.png"), 3.45, 5, "Top-5 recommendations of the final model for a text query, a photo query, a photo + text query and a similar-product query (products not seen in training)."));
+col2.push(P(`As a complementary experiment, a conditional DCGAN [30] trained from scratch with DiffAugment [31] generates new 64×64 product images per category; after fixing an initial mode collapse, its Fréchet distance in CLIP feature space improved from ${D.gan["FD-CLIP untrained generator (baseline)"].toFixed(2)} (untrained generator) to ${D.gan["FD-CLIP (generated vs real)"].toFixed(2)}, and ${Math.round(100 * D.gan["class accuracy (generated)"])}% of generated images are recognised as the requested category (chance ${Math.round(100 * D.gan["chance accuracy"])}%). Image quality remains limited by the small CPU training budget.`));
 
 // VI. LIMITATIONS AND CONCLUSION
 col2.push(H1("VI", "Limitations"));
@@ -370,7 +372,8 @@ REFS.forEach((r, i) => col2.push(new Paragraph({
 // ---------------------------------------------------------------- document
 const page = { size: { width: 12240, height: 15840 }, margin: { top: 1080, bottom: 1440, left: 900, right: 900 } };
 const doc = new Document({
-  creator: "[Student Name]",
+  creator: "Ananya",
+  lastModifiedBy: "Ananya",
   title: "Gated Multimodal Fusion with Uni-Modal Supervision for Product Recommendation",
   styles: { default: { document: { run: { font: FONT, size: SZ } } } },
   numbering: { config: [{ reference: "bullets", levels: [{ level: 0, format: LevelFormat.BULLET, text: "•", alignment: AlignmentType.LEFT,
