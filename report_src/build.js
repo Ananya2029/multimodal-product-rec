@@ -206,7 +206,7 @@ const REFS = [
 
 // ---------------------------------------------------------------- content
 const title = [
-  new Paragraph({ children: [new TextRun({ text: "Gated Multimodal Fusion with Uni-Modal Supervision for Product Recommendation Using Image and Text Embeddings Learned from Scratch", font: FONT, size: 48 })],
+  new Paragraph({ children: [new TextRun({ text: "Gated Multimodal Fusion with Uni-Modal Supervision for Product Recommendation Using Image and Text Embeddings", font: FONT, size: 48 })],
                   alignment: AlignmentType.CENTER, spacing: { after: 240 } }),
 ];
 const authorBlock = (lines) => new TableCell({
