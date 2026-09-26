@@ -308,7 +308,7 @@ const nm = { image: "Image-only CNN", text: "Text-only Transformer", early: "Ear
 col2.push(...TCAP("II", "Test NDCG@10 of Fusion Methods (Mean ± Std, 3 Seeds)"));
 col2.push(TABLE2(["Model", "Similar (type)", "Type + colour", "Text search", "Photo search"],
   [...order.map((m) => ({ cells: [nm[m], ...K.map((k) => ms(M[m], k))] })),
-   { cells: ["Gated + uni-modal (ours)", ...K.map((k) => ms(G, k))], bold: true, shade: true }],
+   { cells: ["Gated + uni-modal", ...K.map((k) => ms(G, k))], bold: true, shade: true }],
   [1200, 960, 960, 960, 960], [0], 13));
 col2.push(P(`Table II shows that adding titles lifts similar-product accuracy from ${f3(M.image["i2i mean"])} (image only) to about ${f3(M.gated["i2i mean"])}. Plain gated fusion is significantly better than early and late fusion on similar products (${pstr(byKey(D.sig.filter(r => r.proposed === "gated" && r.vs === "late"), "metric", "i2i").p_value)} vs. late fusion) and than the image-only model on photo search. The text-only model is strong on type + colour (${f3(M.text["i2i_strict mean"])}) because titles literally contain type and colour words, and late fusion is best for text search (${f3(M.late["text2item mean"])}). With uni-modal supervision, the gated model becomes the best model for similar products (${f3(G["i2i mean"])}) and photo search (${f3(G["image2item mean"])}).`, { }));
 col2.push(...FIG(path.join(ROOT, "results/scratch/method_comparison.png"), 3.45, 2, "Test NDCG@10 of the six fusion methods for the four tasks (mean ± std over three seeds)."));
@@ -341,7 +341,7 @@ col2.push(P(`▲/▼ in Table V mark significant improvements/drops versus the o
 
 col2.push(H2("E", "Robustness to Missing and Wrong Titles"));
 const conds = [["clean", "Clean"], ["drop 30%", "30% words removed"], ["drop 60%", "60% removed"], ["no title", "No title"], ["wrong 20%", "20% wrong"], ["wrong 50%", "50% wrong"]];
-const rm = [["image", "Image-only"], ["text", "Text-only"], ["late", "Late fusion"], ["gated", "Gated"], ["gated+uni", "Gated + uni (ours)"], ["gated+noise+uni", "+ noise-aware (ours)"]];
+const rm = [["image", "Image-only"], ["text", "Text-only"], ["late", "Late fusion"], ["gated", "Gated"], ["gated+uni", "Gated + uni-modal"], ["gated+noise+uni", "Gated + noise-aware + uni-modal"]];
 col2.push(...TCAP("VI", "Similar-Product NDCG@10 under Damaged Titles"));
 col2.push(TABLE2(["Model", ...conds.map((c) => c[1])],
   rm.map(([m, n]) => ({ cells: [n, ...conds.map(([c]) => f3(rob(m, c)))], bold: m === "gated+noise+uni", shade: m.startsWith("gated+") })),
