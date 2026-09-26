@@ -31,6 +31,18 @@
       "run": "xattn_SGD_lr0.1_s0",
       "name": "Cross-attention fusion (proposed)",
       "checkpoint": "xattn_SGD_lr0.1_s0.pt"
+    },
+    "gated_uni": {
+      "run": "bal_uni_s0",
+      "name": "Gated fusion + uni-modal supervision (proposed, final)",
+      "checkpoint": "bal_uni_s0.pt",
+      "arch": "gated"
+    },
+    "gated_noise_uni": {
+      "run": "bal_noise_uni_s0",
+      "name": "Gated fusion + noise-aware + uni-modal (robust variant)",
+      "checkpoint": "bal_noise_uni_s0.pt",
+      "arch": "gated"
     }
   }
 }

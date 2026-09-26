@@ -2,7 +2,8 @@
 
     python -m streamlit run app.py
 
-Two pages: the study (our approach, what we achieved) and a demo of the proposed gated-fusion model.
+Two pages: the study (our approach, what we achieved) and a demo of the final proposed model
+(gated fusion + uni-modal supervision).
 The demo catalog is the TEST split: 6,602 products the model never saw during training.
 """
 import json
@@ -17,7 +18,7 @@ from src.scratch import serve
 from src.scratch.models import METHOD_NAMES
 
 st.set_page_config(page_title="Multimodal Product Recommendation", page_icon="🛍️", layout="wide")
-PROPOSED = "gated"
+PROPOSED = "gated_uni"  # final proposed model: gated fusion + uni-modal supervision
 RES = serve.RES_DIR
 METRICS = {"i2i": "Similar products (same type)", "i2i_strict": "Similar products (same type + colour)",
            "text2item": "Search by text", "image2item": "Search by photo"}
@@ -56,6 +57,14 @@ meth = read_csv("method_comparison.csv").set_index("method")
 opt = read_csv("optimizer_comparison.csv").set_index("optimizer")
 abl = read_csv("ablations.csv").set_index("ablation")
 sig = read_csv("significance.csv")
+bal = read_csv("balance_comparison.csv")
+bal_sig = read_csv("balance_significance.csv")
+if bal is not None and "uni" in set(bal["variant"]):  # final model = gated + uni-modal supervision
+    row = bal.set_index("variant").loc["uni"]
+    meth.loc["gated_uni"] = {**{c: row[c] for c in row.index if c.endswith((" mean", " std"))},
+                             "name": METHOD_NAMES["gated_uni"], "params (M)": meth.loc["gated", "params (M)"]}
+else:
+    PROPOSED = "gated"
 cat = serve.catalog()
 n_types = pd.read_csv(serve.SCRATCH_DIR / "meta.csv", usecols=["articleType"])["articleType"].nunique()
 
@@ -75,11 +84,13 @@ tokenizer and a <b>Transformer</b> read the title.</div>
 how much to trust the image vs. the title, and produces one 128-d product embedding.
 Products with close embeddings are recommended.</div>
 <div class="step"><b>4 · Training.</b> Supervised contrastive loss (same product type ⇒ close) + image–text
-contrastive loss (photo and title of a product ⇒ close). Optimizers <b>SGD, Adam and AdamW</b> were each tuned
-on validation; {summ['epochs']} epochs; {len(summ['seeds'])} random seeds; Kaggle T4 GPU.</div>
+contrastive loss (photo and title of a product ⇒ close) + <b>uni-modal supervision</b> (the photo branch and the
+title branch each learn product types on their own, so neither can lean on the other). Optimizers
+<b>SGD, Adam and AdamW</b> were each tuned on validation; {summ['epochs']} epochs; {len(summ['seeds'])} random seeds;
+Kaggle T4 GPU.</div>
 <div class="step"><b>5 · Evaluation.</b> NDCG@10 on the unseen test products for four tasks: similar products
-(same type / same type + colour), search by text, search by photo. We compare against 5 baselines and
-test significance with a paired bootstrap.</div>
+(same type / same type + colour), search by text, search by photo, plus a <b>robustness test with missing or
+wrong titles</b>. We compare against 5 baselines and test significance with a paired bootstrap.</div>
 """, unsafe_allow_html=True)
     with c2:
         st.graphviz_chart("""
@@ -104,40 +115,41 @@ digraph {
         base_name = "image-only" if k != "text2item" else "text-only"
         col.metric(label, f"{g[f'{k} mean']:.3f}",
                    None if pd.isna(base) else f"{g[f'{k} mean'] - base:+.3f} vs {base_name}")
-    st.caption(f"NDCG@10 of the proposed gated-fusion model on {summ['n_test']:,} unseen test products "
+    st.caption(f"NDCG@10 of the final proposed model ({METHOD_NAMES[PROPOSED]}) on {summ['n_test']:,} unseen test products "
                f"(mean of {len(summ['seeds'])} seeds; 1.0 = perfect ranking).")
 
     def p_of(metric, other):
-        r = sig[(sig["metric"] == metric) & (sig["proposed"] == PROPOSED) & (sig["vs"] == other)]
+        r = sig[(sig["metric"] == metric) & (sig["proposed"] == "gated") & (sig["vs"] == other)]
         return None if r.empty else float(r["p_value"].iloc[0])
 
-    p_img = p_of("image2item", "image")
+    uni_all_sig = bal_sig is not None and bool(
+        (bal_sig[bal_sig["variant"] == "uni"]["p_value"] < 0.05).all() and (bal_sig[bal_sig["variant"] == "uni"]["diff"] > 0).all())
     st.markdown(f"""
 **Key findings**
 - **Combining photo and title works far better than the photo alone:** similar-product accuracy rises from
   {img['i2i mean']:.3f} to **{g['i2i mean']:.3f}**, and same type + colour from {img['i2i_strict mean']:.3f}
   to **{g['i2i_strict mean']:.3f}**.
-- **The fused model finds products from a photo better than an image-only model:**
-  {g['image2item mean']:.3f} vs {img['image2item mean']:.3f} (p {'< 0.001' if p_img is not None and p_img < 0.001 else f'= {p_img:.3f}'}):
-  what it learned from titles improves search by photo.
+- **Uni-modal supervision makes the gated model better on every task**{' (all four gains significant, p < 0.05)' if uni_all_sig else ''}:
+  it stops the title branch from doing all the work ("modality laziness"), so the photo branch learns more.
+  Search by photo rises to **{g['image2item mean']:.3f}**, the best of all models.
+- **Robust when titles are missing:** with no titles, a text-only model collapses, while our fused model keeps
+  working from the photo (see the robustness section).
 - **One model answers every query type:** text, photo, or photo + text, via a shared embedding space.
-- **Gated fusion is the best or tied-best fusion for similar products**, and significantly better than early
-  and late fusion.
 - **Optimizer:** SGD, Adam and AdamW are within about 0.01 of each other; **{summ['best_optimizer']}** was selected
   on validation.
 """)
 
     # ---- comparison table + chart
     st.subheader("Comparison with baselines")
-    order = ["image", "text", "early", "late", "gated", "xattn"]
+    order = ["image", "text", "early", "late", "xattn", "gated", "gated_uni"]
     table = pd.DataFrame({"Model": [METHOD_NAMES[m] for m in order if m in meth.index]})
     for k, label in METRICS.items():
         table[label] = [fmt(meth.loc[m, f"{k} mean"], meth.loc[m, f"{k} std"]) for m in order if m in meth.index]
     table["Parameters"] = [f"{meth.loc[m, 'params (M)']:.1f} M" for m in order if m in meth.index]
 
     def highlight(row):
-        return ["background-color: rgba(46,139,87,0.18); font-weight: 600" if "Gated" in row["Model"] else ""
-                for _ in row]
+        final = "final" in str(row.iloc[0])  # first column holds the model / variant name
+        return ["background-color: rgba(46,139,87,0.18); font-weight: 600" if final else "" for _ in row]
     st.dataframe(table.style.apply(highlight, axis=1), width="stretch", hide_index=True)
     st.caption("NDCG@10, mean ± std over 3 seeds, unseen test products. Text-only is strong on "
                "*same type + colour* because product titles literally contain the type and colour words.")
@@ -164,6 +176,31 @@ digraph {
     st.caption("Removing the supervised contrastive loss costs the most; removing the image–text contrastive loss "
                "hurts search by text and photo. Modality dropout and the consistency loss did not help here.")
 
+    # ---- improving the model: modality balancing
+    if bal is not None:
+        st.subheader("Improving the gated model: fixing modality imbalance")
+        st.markdown("Titles dominated training (text-only was already strong). We tested three fixes from the "
+                    "multimodal-learning literature on the gated model (3 seeds each, significance vs. the "
+                    "original gated model).")
+        names = {"base": "Gated fusion (original)", "ogm": "+ gradient modulation (OGM)",
+                 "uni": "+ uni-modal supervision (final model)", "noise": "+ noise-aware training",
+                 "noise_uni": "+ noise-aware training + uni-modal supervision"}
+        bt = pd.DataFrame({"Variant": [names.get(v, v) for v in bal["variant"]]})
+        for k, label in METRICS.items():
+            cells = []
+            for _, r in bal.iterrows():
+                mark = ""
+                if bal_sig is not None and r["variant"] != "base":
+                    q = bal_sig[(bal_sig["variant"] == r["variant"]) & (bal_sig["metric"] == k)]
+                    if not q.empty and q["p_value"].iloc[0] < 0.05:
+                        mark = " ▲" if q["diff"].iloc[0] > 0 else " ▼"
+                cells.append(fmt(r[f"{k} mean"], r[f"{k} std"]) + mark)
+            bt[label] = cells
+        st.dataframe(bt.style.apply(highlight, axis=1), width="stretch", hide_index=True)
+        st.caption("▲ / ▼ = significantly better / worse than the original gated model (paired bootstrap, p < 0.05). "
+                   "Noise-aware training damages titles during training: it lowers clean accuracy but is the most "
+                   "robust when real titles are damaged (next section).")
+
     # ---- robustness to damaged titles
     rob = read_csv("robustness_summary.csv")
     if rob is not None:
@@ -175,19 +212,27 @@ digraph {
         labels = {"clean": "Clean titles", "drop 30%": "30% of words removed", "drop 60%": "60% removed",
                   "no title": "No title", "wrong 20%": "20% wrong titles", "wrong 50%": "50% wrong titles"}
         piv = rob.pivot(index="model", columns="condition", values="i2i mean").reindex(columns=conds)
-        piv = piv.reindex([m for m in ["image", "text", "early", "late", "gated", "xattn"] if m in piv.index])
-        rt = pd.DataFrame({"Model": [METHOD_NAMES[m] for m in piv.index]})
+        rob_names = {**METHOD_NAMES, "gated+uni": METHOD_NAMES["gated_uni"],
+                     "gated+noise+uni": METHOD_NAMES["gated_noise_uni"], "gated+ogm": "Gated fusion + OGM",
+                     "gated+noise": "Gated fusion + noise-aware training"}
+        piv = piv.reindex([m for m in ["image", "text", "early", "late", "xattn", "gated", "gated+uni",
+                                       "gated+noise+uni"] if m in piv.index])
+        rt = pd.DataFrame({"Model": [rob_names[m] for m in piv.index]})
         for c in conds:
             rt[labels[c]] = [f"{v:.3f}" for v in piv[c]]
         st.dataframe(rt.style.apply(highlight, axis=1), width="stretch", hide_index=True)
         gt, tt, it = piv.loc["gated"], piv.loc["text"], piv.loc["image"]
+        rn = piv.loc["gated+noise+uni"] if "gated+noise+uni" in piv.index else None
         st.markdown(f"""
 - **Fusion keeps working when text fails:** with no titles, the text-only model collapses to {tt['no title']:.3f},
-  while gated fusion keeps **{gt['no title']:.3f}**, because the image branch carries the recommendation.
-- **Open problem:** with damaged titles, the fused models fall below the image-only model
-  ({gt['drop 60%']:.3f} vs {it['drop 60%']:.3f} at 60% words removed). They trust unreliable text too much, which
-  motivates our next step: noise-aware training.
-""")
+  while the gated model keeps **{gt['no title']:.3f}**, because the photo carries the recommendation.
+- **But plain fusion trusts damaged text too much:** at 60% of words removed it falls to {gt['drop 60%']:.3f},
+  below the image-only model ({it['drop 60%']:.3f}).
+""" + ("" if rn is None else f"""- **Noise-aware training fixes this:** it is the most robust model in every damaged condition
+  ({rn['drop 60%']:.3f} at 60% removed, {rn['wrong 50%']:.3f} with 50% wrong titles), never below image-only,
+  at the cost of lower clean accuracy ({rn['clean']:.3f}). A deployment can choose the clean-accuracy model
+  or the robust model depending on catalog quality.
+"""))
         if (RES / "robustness.png").exists():
             st.image(str(RES / "robustness.png"), width="stretch")
 
@@ -211,7 +256,7 @@ digraph {
 
 # ================================================================== DEMO
 else:
-    st.markdown(f"**Model: Gated fusion (proposed)** · catalog of **{len(cat):,} products it never saw in "
+    st.markdown(f"**Model: {METHOD_NAMES[PROPOSED]}** · catalog of **{len(cat):,} products it never saw in "
                 "training**")
     mode = st.radio("Search by", ["💬 Text", "📷 Photo", "🧩 Photo + text", "🧥 Similar to a product"],
                     horizontal=True, key="mode")

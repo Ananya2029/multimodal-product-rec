@@ -51,12 +51,13 @@ def item_embeddings(method: str) -> np.ndarray:
 @lru_cache(maxsize=None)
 def model(method: str) -> MultimodalRec:
     info = export_info()["methods"][method]
-    m = MultimodalRec(method, len(vocab()))
+    m = MultimodalRec(info.get("arch", method), len(vocab()))  # extension variants reuse an architecture
     m.load_state_dict(torch.load(MODEL_DIR / info["checkpoint"], map_location="cpu"))
     return m.eval()
 
 
 def can_handle(method: str, image: bool, text: bool) -> bool:
+    method = export_info()["methods"].get(method, {}).get("arch", method)
     if method == "image":
         return image
     if method == "text":

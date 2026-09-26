@@ -19,10 +19,11 @@ def test_app_pages_and_search_modes():
 def test_proposed_model_answers_all_query_types():
     from PIL import Image
     img = Image.open(serve.catalog().iloc[0]["image_file"])
-    for q in (serve.encode_query("gated", text="red dress"), serve.encode_query("gated", image=img),
-              serve.encode_query("gated", image=img, text="red")):
-        idx, s = serve.top_k(serve.scores("gated", q), 10)
-        assert len(idx) == 10
+    for m in [x for x in ("gated", "gated_uni") if x in serve.export_info()["methods"]]:
+        for q in (serve.encode_query(m, text="red dress"), serve.encode_query(m, image=img),
+                  serve.encode_query(m, image=img, text="red")):
+            idx, s = serve.top_k(serve.scores(m, q), 10)
+            assert len(idx) == 10
     # text search returns the right kind of product
     idx, _ = serve.top_k(serve.scores("gated", serve.encode_query("gated", text="black handbag for women")), 10)
     assert (serve.catalog().iloc[idx]["articleType"] == "Handbags").mean() >= 0.7

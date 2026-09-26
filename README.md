@@ -40,6 +40,21 @@ The app offers: 📊 **Model & results** (method, optimizer and ablation tables,
 ## Results
 The from-scratch results (tables and figures) are written to `results/scratch/` by the Colab run: `method_comparison.csv/.png`, `optimizer_comparison.csv/.png`, `optimizer_curves.png`, `ablations.csv/.png`, `significance.csv`, `summary.json`.
 
+### Extension: modality balancing and robustness
+Text dominated training, so text-only was already strong. We tested three fixes on the gated model, each with 3 seeds and significance tests against the original. `python -m src.scratch.experiments --stages report_balance` produces `results/scratch/balance_*.csv`.
+
+| Gated fusion variant | Similar (type) | Type + colour | Text search | Photo search |
+|---|---|---|---|---|
+| original | 0.956 | 0.765 | 0.568 | 0.831 |
+| + gradient modulation (OGM, α = 0.3 tuned on validation) | 0.957 | 0.767 | 0.572 | 0.837 |
+| **+ uni-modal supervision (final model)** | **0.958** | **0.775** | **0.595** | **0.847** |
+| + noise-aware training (titles damaged during training) | 0.893 | 0.531 | 0.272 | 0.783 |
+
+The **noisy-title benchmark** (`python -m src.scratch.robustness`) damages test titles by word dropout (30/60/100%) or wrong titles (20/50%):
+- With no titles, text-only collapses (0.074), while the fused models keep 0.74–0.81.
+- Plain fusion over-trusts damaged text and falls below image-only.
+- Noise-aware training (+ uni-modal) is the most robust model in every damaged condition (e.g. 0.844 at 60% of words removed, compared with 0.807 for image-only), at the cost of clean accuracy.
+
 ### Conditional GAN (`src/gan.py`, trained from scratch)
 A conditional DCGAN (hinge loss, spectral norm, minibatch-std, DiffAugment, Adam with TTUR) generates 64×64 product images for each category. The first run mode-collapsed; DiffAugment fixed it. After 50 epochs on CPU, the FD in CLIP space fell from 0.72 (untrained generator) to **0.50** (real images score 0.035). Category accuracy is **14%** (chance is 7%).
 

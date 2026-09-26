@@ -35,6 +35,9 @@ METHOD_NAMES = {
     "late": "Late fusion (score sum)",
     "gated": "Gated fusion (proposed)",
     "xattn": "Cross-attention fusion (proposed)",
+    # extension variants of the gated model (same architecture, different training)
+    "gated_uni": "Gated fusion + uni-modal supervision (proposed, final)",
+    "gated_noise_uni": "Gated fusion + noise-aware + uni-modal (robust variant)",
 }
 FEAT = 256   # encoder feature size
 EMB = 128    # retrieval embedding size

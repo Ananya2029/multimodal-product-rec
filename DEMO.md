@@ -11,7 +11,7 @@
 4. Keep one product photo on the desktop for image search, e.g. any file from `data\scratch\test_images\`.
 
 ## What the project is (30-second pitch)
-"We recommend products by learning **one embedding from the product photo and the title together**. Everything is trained **from scratch**: a CNN for images, a Transformer for titles, and our own tokenizer, with no pretrained weights. We compare 6 ways of combining the two modalities, 3 optimizers and 5 training components, on **44,013 products**. Each result is tested on **6,602 products the model never saw**, with 3 random seeds and significance tests."
+"We recommend products by learning **one embedding from the product photo and the title together**. Everything is trained **from scratch**: a CNN for images, a Transformer for titles, and our own tokenizer, with no pretrained weights. We compare 6 ways of combining the two modalities, 3 optimizers and 5 training components, on **44,013 products**. Our final model adds **uni-modal supervision** to gated fusion, which makes it significantly better on every task. We also test **robustness to missing or wrong titles**. Each result is tested on **6,602 products the model never saw**, with 3 random seeds and significance tests."
 
 ## Demo flow (about 10 minutes)
 The app has two pages: **📊 Results** and **🛍️ Try the proposed model**.
@@ -23,13 +23,30 @@ The app has two pages: **📊 Results** and **🛍️ Try the proposed model**.
 | 3 | (scroll) | Key findings, then the comparison table (our model is highlighted) | "Compared with 5 baselines over 3 seeds, with significance tests." |
 | 4 | (scroll) | Optimizer table and curves | "SGD, Adam and AdamW, each tuned on validation; SGD selected." |
 | 5 | (scroll) | Ablation table | "The supervised contrastive loss matters most." |
+| 5b | (scroll) | *Improving the gated model* table (▲ = significantly better) | "Titles dominated training. Uni-modal supervision fixed that and improved all four tasks; this is our final model." |
+| 5c | (scroll) | *Robustness* table | "With no titles, text-only collapses (0.07) but our fusion keeps 0.74–0.81. Noise-aware training is the most robust to damaged titles." |
 | 6 | (scroll) | GAN | "A conditional GAN, also from scratch, generates new product images." |
 | 7 | 🛍️ Try it: 🧥 Similar to a product | 🎲 Random product, 2–3 times | "Products the model never saw in training; ✅ = same type." |
 | 8 | 💬 Text | `black handbag for women`, `blue jeans for men` | "Search by words." |
 | 9 | 📷 Photo | Upload the prepared photo | "Search by photo." |
 | 10 | 🧩 Photo + text | Watch photo `30039.jpg` + `white watch` | "Both together in one query: same kind of product, new colour." |
 
-## Results (test NDCG@10, 6,602 unseen products, mean of 3 seeds)
+## Final model: gated fusion + uni-modal supervision (3 seeds, 6,602 unseen products)
+| Similar (type) | Type + colour | Text search | Photo search |
+|---|---|---|---|
+| **0.958** | **0.775** | **0.595** | **0.847** (best of all models) |
+
+All four gains over the original gated model are statistically significant (p < 0.001).
+
+## Robustness (similar products, NDCG@10; photos untouched, titles damaged)
+| Model | Clean | 60% words removed | No title | 50% wrong titles |
+|---|---|---|---|---|
+| Image-only | 0.807 | 0.807 | 0.807 | 0.807 |
+| Text-only | 0.955 | 0.444 | 0.074 | 0.269 |
+| Gated + uni-modal (final) | 0.960 | 0.607 | 0.761 | 0.445 |
+| Gated + noise-aware + uni-modal (robust) | 0.911 | **0.844** | **0.807** | **0.851** |
+
+## Results of the main study (test NDCG@10, 6,602 unseen products, mean of 3 seeds)
 | Method | More like this (type) | Type + colour | Text query | Photo query |
 |---|---|---|---|---|
 | Image-only CNN | 0.813 | 0.372 | n/a | 0.813 |
