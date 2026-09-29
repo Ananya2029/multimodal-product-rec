@@ -176,7 +176,10 @@ def load_generator():
 @torch.no_grad()
 def generate(G, class_idx: int, n: int = 8, seed: int = 0) -> list[Image.Image]:
     g = torch.Generator().manual_seed(seed)
-    z = torch.randn(n, Z_DIM, generator=g)
+    # Draw each noise vector separately: torch.randn(n, Z) uses a size-dependent
+    # sampler, so a single batched draw would give a different first image for
+    # n=1 and n=3. This way image i for a given seed is the same whatever n is.
+    z = torch.stack([torch.randn(Z_DIM, generator=g) for _ in range(n)])
     y = torch.full((n,), class_idx, dtype=torch.long)
     return to_pil(G.eval()(z, y))
 
